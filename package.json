@@ -1,0 +1,23 @@
+{
+  "name": "evil-contraption",
+  "version": "0.1.0",
+  "description": "can I use XState and ECS together to make a game? only one way to find out...",
+  "dependencies": {
+    "ecsy": "^0.4.2",
+    "pixi.js": "^6.0.1",
+    "react": "17.0.2",
+    "react-dom": "17.0.2",
+    "xstate": "^4.17.1"
+  },
+  "devDependencies": {
+    "esbuild": "^0.11.2",
+    "@types/react": "^17.0.3",
+    "@types/react-dom": "^17.0.3"
+  },
+  "scripts": {
+    "watch": "esbuild ./client/app.tsx --bundle --watch --define:process.env.NODE_ENV='development' --outfile=./public/dist/app.js",
+    "dist": "esbuild ./client/app.tsx --bundle --minify --define:process.env.NODE_ENV='production' --outfile=./public/dist/app.js"
+  },
+  "author": "Pavel Hrách <pavel@hrach.email>",
+  "license": "MIT"
+}

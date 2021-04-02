@@ -1,0 +1,9 @@
+{
+  "imports": {
+    "ws": "https://deno.land/std@0.91.0/ws/mod.ts",
+    "uuid": "https://deno.land/std@0.91.0/uuid/mod.ts",
+    "oak": "https://deno.land/x/oak@v6.5.0/mod.ts",
+    "ecsy": "https://cdn.skypack.dev/ecsy@^v0.4.2?dts",
+    "xstate": "https://cdn.skypack.dev/xstate@^v4.17.1?dts"
+  }
+}
