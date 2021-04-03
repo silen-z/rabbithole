@@ -2,12 +2,12 @@ import { World, System } from "ecsy";
 import { WebSocket, isWebSocketCloseEvent } from "ws";
 import { v4 } from "uuid";
 import type { Configuration } from "./configuration.ts";
-import { Machine, interpret, spawn, assign, sendParent } from "xstate";
+import { Machine, interpret, spawn, assign, sendParent, ActorRefFrom, Interpreter, forwardTo } from "xstate";
 import { TickScheduler } from "../shared/tickscheduler.ts";
+import { ServerDecoder } from "./packet-decoder.ts";
+import { without } from "../shared/utils.ts";
 
 export class GameServer {
-  config: Configuration;
-
   world = new World();
 
   tickScheduler = new TickScheduler();
@@ -20,8 +20,7 @@ export class GameServer {
     { clock: this.tickScheduler }
   );
 
-  constructor(config: Configuration) {
-    this.config = config;
+  constructor(private config: Configuration) {
     this.world.registerSystem(LobbySystem, { gameState: this.service });
   }
 
@@ -66,12 +65,13 @@ class LobbySystem extends System {
 
 type GameServerEvents =
   | { type: "PLAYER_CONNECTED"; socket: WebSocket }
-  | { type: "PLAYER_DISCONNECTED"; id: string };
+  | { type: "PLAYER_DISCONNECTED"; id: string }
+  | { type: "PLAYER_IDENTIFY"; id: string; nickname: string };
 
 interface GameServerContext {
   lobbyTimer: number;
   world: World;
-  players: Record<string, any>;
+  players: Record<string, PlayerConnectionRef>;
 }
 
 const GameServerMachine = Machine<GameServerContext, GameServerEvents>({
@@ -89,10 +89,7 @@ const GameServerMachine = Machine<GameServerContext, GameServerEvents>({
 
           console.log(`GAMESERVER: Player ${id} connected`);
 
-          const actorRef = spawn(
-            PlayerConnection.withContext({ id, socket: e.socket }),
-            `player-${id}`
-          );
+          const actorRef = spawn(PlayerConnection.withContext({ id, socket: e.socket }), `player-${id}`);
 
           return { ...ctx.players, [id]: actorRef };
         },
@@ -103,31 +100,20 @@ const GameServerMachine = Machine<GameServerContext, GameServerEvents>({
       actions: assign({
         players: (ctx, e) => {
           console.log(`GAMESERVER: Player ${e.id} disconnected`);
-          ctx.players[e.id].stop();
+          ctx.players[e.id]?.stop?.();
           return without(e.id, ctx.players);
         },
       }),
     },
+
+    PLAYER_IDENTIFY: {
+      actions: (ctx, e) => {
+        ctx.players[e.id].send({ type: "IDENTITY_CONFIRM" });
+      },
+    },
   },
   states: {
-    lobby: {
-      after: {
-        10000: "loading",
-      },
-      entry: (context) => {
-        console.log("enabling lobby system");
-        context.world.getSystem(LobbySystem).play();
-      },
-      exit: (context) => {
-        context.world.getSystem(LobbySystem).stop();
-      },
-    },
-    loading: {
-      entry: () => {
-        console.log("loading...");
-      },
-    },
-    playing: {},
+    lobby: {},
   },
 });
 
@@ -139,56 +125,91 @@ interface PlayerConnectionContext {
 
 type PlayerConnectionEvents =
   | { type: "IDENTIFY"; nickname: string }
-  | { type: "PLAYER_DISCONNECTED" };
+  | { type: "DISCONNECTED" }
+  | { type: "IDENTITY_CONFIRM" }
+  | { type: "IDENTITY_REJECT" };
 
-const PlayerConnection = Machine<
-  PlayerConnectionContext,
-  PlayerConnectionEvents
->({
-  initial: "waiting_for_id",
-  invoke: {
-    src: (ctx) => async (callback) => {
-      for await (const event of ctx.socket) {
-        if (isWebSocketCloseEvent(event)) {
-          callback({ type: "PLAYER_DISCONNECTED" });
-          break;
-        }
-
-        if (typeof event !== "string") {
-          console.log(`Received invalid data from ${ctx.id}`);
-          continue;
-        }
-
-        const data = JSON.parse(event);
-        console.log(`Received data from player ${ctx.id}: ${event}`);
-        callback(data);
-      }
-    },
-  },
-  on: {
-    PLAYER_DISCONNECTED: "disconnected",
+const PlayerConnection = Machine<PlayerConnectionContext, PlayerConnectionEvents>({
+  id: "client-actor",
+  initial: "connected",
+  entry: (ctx) => {
+    console.log(`GAMESERVER: Actor spawned for player: ${playerName(ctx)}`);
   },
   states: {
-    waiting_for_id: {
-      on: {
-        IDENTIFY: {
-          target: "idle",
-          actions: [
-            assign({ nickname: (ctx, e) => e.nickname }),
-            (ctx, e) => {
-              console.log(
-                `GAMESERVER: Player ${ctx.id} identified with name ${e.nickname}`
-              );
-            },
-          ],
+    connected: {
+      // after: {
+      //   3000: {
+      //     actions: send("IDENTITY_CONFIRM", { to: "socket" }),
+      //   },
+      // },
+      invoke: {
+        id: "socket",
+        onError: {
+          actions: (ctx, e) => {
+            console.log(`GAMESERVER: ERROR in player actor ${playerName(ctx)}: `, e);
+          },
+        },
+        src: (ctx) => (callback, receive) => {
+          receive((event) => {
+            console.log(`sending event to player ${playerName(ctx)}, event: `, event);
+            ctx.socket.send(JSON.stringify(event));
+          });
+
+          // TODO callback invoked by XState can't be async because receiving paren events wouldn't work
+          (async () => {
+            for await (const message of ctx.socket) {
+              if (isWebSocketCloseEvent(message)) {
+                callback({ type: "DISCONNECTED" });
+                break;
+              }
+
+              if (message instanceof Uint8Array) {
+                const event = ServerDecoder.decode(message.buffer);
+                console.log(`received event from player: ${playerName(ctx)}, event: `, event);
+                callback(event);
+              } else {
+                console.log(`received invalid data from player: ${playerName(ctx)}, data:`, message);
+                continue;
+              }
+            }
+          })();
+
+          return () => {
+            if (!ctx.socket.isClosed) {
+              ctx.socket.close();
+            }
+          };
         },
       },
-      entry: (ctx) => {
-        console.log(`GAMESERVER: Actor spawned for player: ${ctx.id}`);
+
+      initial: "waiting_for_id",
+      states: {
+        waiting_for_id: {
+          on: {
+            IDENTIFY: {
+              actions: sendParent((ctx, e) => ({
+                type: "PLAYER_IDENTIFY",
+                id: ctx.id,
+                nickname: e.nickname,
+              })),
+            },
+            IDENTITY_CONFIRM: {
+              target: "idle",
+              actions: forwardTo("socket"),
+            },
+            IDENTITY_REJECT: {
+              actions: forwardTo("socket"),
+            },
+          },
+        },
+
+        idle: {},
+      },
+      on: {
+        DISCONNECTED: "disconnected",
       },
     },
 
-    idle: {},
     disconnected: {
       entry: sendParent((ctx) => ({ type: "PLAYER_DISCONNECTED", id: ctx.id })),
       type: "final",
@@ -196,13 +217,12 @@ const PlayerConnection = Machine<
   },
 });
 
-function without<T, K extends keyof T>(omitKey: K, obj: T): Omit<T, K> {
-  const newObj = {} as Omit<T, K>;
-  for (const [key, value] of Object.entries(obj)) {
-    if (key !== omitKey) {
-      // @ts-ignore ^
-      newObj[key] = value;
-    }
+type PlayerConnectionRef = ActorRefFrom<Interpreter<PlayerConnectionContext, any, PlayerConnectionEvents>["machine"]>;
+
+function playerName(ctx: PlayerConnectionContext): string {
+  if (ctx.nickname == null) {
+    return ctx.id;
   }
-  return newObj;
+
+  return `${ctx.id} (${ctx.nickname})`;
 }

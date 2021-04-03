@@ -1,6 +1,6 @@
 import * as React from "react";
 import { render } from "react-dom";
-import type { ClientState, ClientEvent } from "./app";
+import type { ClientState, ClientEvent } from "./client";
 
 const ClientStateContext = React.createContext<{
   state: ClientState;
@@ -8,17 +8,11 @@ const ClientStateContext = React.createContext<{
 }>(null);
 
 export class UiControl {
-  container: HTMLElement;
-  dispatch: (event: ClientEvent) => void;
+  constructor(private container: HTMLElement) {}
 
-  constructor(container: HTMLElement, dispatch: (event: ClientEvent) => void) {
-    this.container = container;
-    this.dispatch = dispatch;
-  }
-
-  rerender(state: ClientState) {
+  rerender(state: ClientState, dispatch: (event: ClientEvent) => void) {
     render(
-      <ClientStateContext.Provider value={{ state, dispatch: this.dispatch }}>
+      <ClientStateContext.Provider value={{ state, dispatch }}>
         <Ui />
       </ClientStateContext.Provider>,
       this.container
@@ -28,14 +22,14 @@ export class UiControl {
 
 function Ui() {
   const { state } = React.useContext(ClientStateContext);
-  if (state.matches("picking_name")) {
+  if (state.matches("unidentified")) {
     return <LoginScreen />;
   }
   return null;
 }
 
 function LoginScreen() {
-  const { dispatch } = React.useContext(ClientStateContext);
+  const { dispatch, state } = React.useContext(ClientStateContext);
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     dispatch({
@@ -44,15 +38,25 @@ function LoginScreen() {
     });
   }
 
+  const isWaitingForConfirm = state.matches("unidentified.waiting_for_confirm");
+  const rejectReson = state.context.identityRejectReason;
+
   return (
     <div className="login-screen">
       <form onSubmit={handleSubmit} className="nickname-form">
-        <p>
-          Want a playable game? Checkout out{" "}
-          <a href="https://stockheimer.dontcodethis.com/">Stockheimer</a>
-        </p>
+        {isWaitingForConfirm ? (
+          <p>joining in...</p>
+        ) : rejectReson != null ? (
+          <p>{rejectReson}</p>
+        ) : (
+          <p>
+            Want a playable game? Checkout out{" "}
+            <a href="https://stockheimer.dontcodethis.com/">Stockheimer</a>
+          </p>
+        )}
         <label>
-          Nickname: <input name="nickname" type="text" />
+          Nickname:{" "}
+          <input name="nickname" type="text" disabled={isWaitingForConfirm} />
         </label>
         <input type="submit" value="Play" />
       </form>

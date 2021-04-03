@@ -5,6 +5,10 @@ body {
   display: flex;
 }
 
+canvas {
+  width: 100%;
+}
+
 #ui {
   position: absolute;
   width: 100%;
