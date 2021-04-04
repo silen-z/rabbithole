@@ -1,7 +1,8 @@
-import { Machine, assign, forwardTo, send, sendParent, Sender, Receiver } from "xstate";
+import { Machine, assign, forwardTo, send, sendParent, Sender, Receiver, AnyEventObject } from "xstate";
 import { ClientEvent } from "./client";
+import { ClientDecoder } from "./client-packet-decoder";
 
-type ConnectionEvent =
+export type ConnectionEvent =
   | { type: "CONNECT"; address: string }
   | { type: "SOCKET_READY" }
   | { type: "SOCKET_CLOSED" }
@@ -14,96 +15,102 @@ interface ConnectionContext {
   queue: ArrayBuffer[];
 }
 
-export const Connection = Machine<ConnectionContext, any, ConnectionEvent>({
-  strict: true,
-  initial: "disconnected",
-  context: {
-    address: null,
-    queue: [],
-  },
-  states: {
-    disconnected: {
-      on: {
-        CONNECT: {
-          target: "connected",
-          actions: assign({ address: (ctx, e) => e.address }),
-        },
-        SEND: {
-          actions: assign({ queue: (ctx, e) => [...ctx.queue, e.packet] }),
+export const Connection = (address: string) =>
+  Machine<ConnectionContext, ConnectionEvent>({
+    strict: true,
+    initial: "disconnected",
+    context: {
+      address,
+      queue: [],
+    },
+    states: {
+      disconnected: {
+        on: {
+          CONNECT: "connected",
+          SEND: {
+            actions: assign({ queue: (ctx, e) => [...ctx.queue, e.packet] }),
+          },
         },
       },
-    },
-    connected: {
-      initial: "connecting",
-      // @ts-ignore
-      invoke: {
-        id: "socket",
-        src: (ctx) => (sender: Sender<ConnectionEvent>, receiver: Receiver<ConnectionEvent>) => {
-          let socket = new WebSocket(ctx.address);
+      connected: {
+        initial: "connecting",
+        states: {
+          connecting: {
+            on: {
+              SOCKET_READY: "ready",
+              SEND: {
+                actions: assign({ queue: (ctx, e) => [...ctx.queue, e.packet] }),
+              },
+            },
+          },
+          ready: {
+            entry: [
+              send((ctx) => ({ type: "SUBMIT_QUEUE", queue: ctx.queue }), {
+                to: "socket",
+              }),
+              // TODO clearing the queue assign({ queue: (ctx) => [] }),
+            ],
+            on: {
+              SEND: {
+                actions: forwardTo("socket"),
+              },
+              RECEIVE: {
+                actions: sendParent((_, e) => e.event),
+              },
+            },
+          },
+        },
+        on: {
+          SOCKET_CLOSED: "disconnected",
+        },
 
-          receiver((event) => {
-            if (event.type === "SEND") {
-              console.log("sending packet to server", event.packet);
-              socket.send(event.packet);
-            }
+        invoke: {
+          id: "socket",
+          onError: {
+            actions: (_, e) => {
+              console.log(e);
+            },
+          },
+          src: (ctx) => (sender: Sender<ConnectionEvent>, receiver: Receiver<ConnectionEvent | AnyEventObject>) => {
+            let socket = new WebSocket(ctx.address);
 
-            if (event.type === "SUBMIT_QUEUE") {
-              console.log(`submiting queue of ${event.queue.length} packets`);
-              for (const packet of event.queue) {
-                console.log("sending packet to server", packet);
-                socket.send(packet);
+            receiver((event) => {
+              if (event.type === "SEND") {
+                console.log("sending packet to server", event.packet);
+                socket.send(event.packet);
               }
-            }
-          });
 
-          socket.addEventListener("open", () => {
-            sender({ type: "SOCKET_READY" });
-          });
+              if (event.type === "SUBMIT_QUEUE") {
+                console.log(`submiting queue of ${event.queue.length} packets`);
+                for (const packet of event.queue) {
+                  console.log("sending packet to server", packet);
+                  socket.send(packet);
+                }
+              }
+            });
 
-          socket.addEventListener("message", (message) => {
-            const event = JSON.parse(message.data);
-            sender({ type: "RECEIVE", event });
-          });
+            socket.addEventListener("open", () => {
+              sender({ type: "SOCKET_READY" });
+            });
 
-          socket.addEventListener("close", () => {
-            sender({ type: "SOCKET_CLOSED" });
-          });
+            socket.addEventListener("message", async (message) => {
+              if (!(message.data instanceof Blob)) {
+                console.log(`received invalid packet from server: `, message.data);
+                return;
+              }
 
-          return () => socket.close();
-        },
-        onError: (ctx, e) => {
-          console.log(e);
-        },
-      },
-      states: {
-        connecting: {
-          on: {
-            SOCKET_READY: "ready",
-            SEND: {
-              actions: assign({ queue: (ctx, e) => [...ctx.queue, e.packet] }),
-            },
+              const buffer = await message.data.arrayBuffer();
+              const event = ClientDecoder.decode(buffer);
+              sender({ type: "RECEIVE", event });
+            });
+
+            socket.addEventListener("close", () => {
+              sender({ type: "SOCKET_CLOSED" });
+            });
+
+            return () => socket.close();
           },
         },
-        ready: {
-          entry: [
-            send((ctx) => ({ type: "SUBMIT_QUEUE", queue: ctx.queue }), {
-              to: "socket",
-            }),
-            // assign({ queue: (ctx) => [] }),
-          ],
-          on: {
-            SEND: {
-              actions: forwardTo("socket"),
-            },
-            RECEIVE: {
-              actions: sendParent((ctx, e) => e.event),
-            },
-          },
-        },
-      },
-      on: {
-        SOCKET_CLOSED: "disconnected",
       },
     },
-  },
-});
+  });

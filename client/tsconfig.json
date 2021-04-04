@@ -1,8 +1,8 @@
 {
   "compilerOptions": {
     "strict": true,
-    "downlevelIteration": true,
-    "lib": ["ES2015"],
+    "lib": ["DOM", "ES2015"],
+    "jsx": "preserve",
 
     // linter checks
     "noFallthroughCasesInSwitch": true,

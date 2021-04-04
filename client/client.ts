@@ -1,8 +1,8 @@
 import { World } from "ecsy";
 import * as PIXI from "pixi.js";
-import { Machine, interpret, assign, State, send } from "xstate";
+import { Machine, interpret, assign, State, send, SpawnedActorRef } from "xstate";
 import { TickScheduler } from "../shared/tickscheduler";
-import { Connection } from "./connection";
+import { Connection, ConnectionEvent } from "./connection";
 import { RenderingSystem, Sprite } from "./rendering-system";
 import { UiControl } from "./ui";
 import { Identify } from "../shared/packets";
@@ -28,7 +28,7 @@ class Client {
     this.service.start();
 
     PIXI.Loader.shared.add("sprites/spaceship.png").load(() => {
-      let handle = new PIXI.Sprite(PIXI.Loader.shared.resources["sprites/spaceship.png"].texture);
+      let handle = new PIXI.Sprite(PIXI.Loader.shared.resources["sprites/spaceship.png"]!.texture);
       this.world.createEntity("test-object").addComponent(Sprite, { handle });
     });
 
@@ -53,7 +53,7 @@ class Client {
 interface ClientStateContext {
   identityRejectReason?: string;
   socketQueue?: ClientEvent[];
-  connRef?: any;
+  connRef?: SpawnedActorRef<ConnectionEvent>;
 }
 
 export type ClientEvent =
@@ -70,7 +70,7 @@ const ClientStateMachine = Machine<ClientStateContext, ClientEvent>({
   context: {},
   invoke: {
     id: "connection",
-    src: Connection,
+    src: Connection("ws://localhost:8000/game"),
   },
   states: {
     unidentified: {
@@ -81,9 +81,9 @@ const ClientStateMachine = Machine<ClientStateContext, ClientEvent>({
             IDENTIFY: {
               target: "waiting_for_confirm",
               actions: [
-                send({ type: "CONNECT", address: "ws://localhost:8000/game" }, { to: "connection" }),
+                send({ type: "CONNECT" }, { to: "connection" }),
                 send(
-                  (ctx, e) => ({
+                  (_, e) => ({
                     type: "SEND",
                     packet: Identify({ nickname: e.nickname }),
                   }),
@@ -94,13 +94,13 @@ const ClientStateMachine = Machine<ClientStateContext, ClientEvent>({
           },
         },
         waiting_for_confirm: {
-          entry: [assign({ identityRejectReason: (ctx) => null })],
+          entry: assign({ identityRejectReason: (_) => undefined }),
           on: {
             IDENTITY_CONFIRM: "identified",
             IDENTITY_REJECT: {
               target: "selecting_name",
               actions: assign({
-                identityRejectReason: (ctx, e) => e.reason,
+                identityRejectReason: (_, e) => e.reason,
               }),
             },
           },
@@ -109,7 +109,7 @@ const ClientStateMachine = Machine<ClientStateContext, ClientEvent>({
             5000: {
               target: "selecting_name",
               actions: assign({
-                identityRejectReason: (ctx, e) => "timed out",
+                identityRejectReason: (_) => "timed out",
               }),
             },
           },
@@ -133,7 +133,7 @@ let renderer = new PIXI.Application({
 });
 document.body.append(renderer.view);
 
-let ui = new UiControl(document.getElementById("ui"));
+let ui = new UiControl(document.getElementById("ui")!);
 let client = new Client(renderer, ui);
 
 PIXI.Ticker.shared.stop();

@@ -1,24 +1,19 @@
+import { Machine, interpret, spawn, send, actions, SendAction, EventObject, SpawnedActorRef } from "xstate";
+import { assign } from "@xstate/immer";
 import { World, System } from "ecsy";
-import { WebSocket, isWebSocketCloseEvent } from "ws";
+import { WebSocket } from "ws";
 import { v4 } from "uuid";
+
 import type { Configuration } from "./configuration.ts";
-import { Machine, interpret, spawn, assign, sendParent, ActorRefFrom, Interpreter, forwardTo } from "xstate";
 import { TickScheduler } from "../shared/tickscheduler.ts";
-import { ServerDecoder } from "./packet-decoder.ts";
-import { without } from "../shared/utils.ts";
+import { PlayerConnection, PlayerConnectionEvent } from "./player-connection.ts";
 
 export class GameServer {
   world = new World();
 
   tickScheduler = new TickScheduler();
 
-  service = interpret(
-    GameServerMachine.withContext({
-      ...GameServerMachine.context,
-      world: this.world,
-    }),
-    { clock: this.tickScheduler }
-  );
+  service = interpret(GameServerMachine(this.world), { clock: this.tickScheduler });
 
   constructor(private config: Configuration) {
     this.world.registerSystem(LobbySystem, { gameState: this.service });
@@ -45,8 +40,6 @@ export class GameServer {
     loop();
   }
 
-  update() {}
-
   handleConnection(socket: WebSocket) {
     this.service.send({ type: "PLAYER_CONNECTED", socket });
   }
@@ -63,166 +56,86 @@ class LobbySystem extends System {
   execute() {}
 }
 
-type GameServerEvents =
+type PlayerIdentifyEvent = {
+  type: "PLAYER_IDENTIFY";
+  id: string;
+  nickname: string;
+};
+
+type GameServerEvent =
   | { type: "PLAYER_CONNECTED"; socket: WebSocket }
   | { type: "PLAYER_DISCONNECTED"; id: string }
-  | { type: "PLAYER_IDENTIFY"; id: string; nickname: string };
+  | PlayerIdentifyEvent;
 
-interface GameServerContext {
-  lobbyTimer: number;
-  world: World;
-  players: Record<string, PlayerConnectionRef>;
-}
-
-const GameServerMachine = Machine<GameServerContext, GameServerEvents>({
-  initial: "lobby",
-  context: {
-    players: {},
-    //@ts-ignore gets assigned in GameServer
-    world: undefined,
-  },
-  on: {
-    PLAYER_CONNECTED: {
-      actions: assign({
-        players: (ctx, e) => {
-          const id = v4.generate();
-
-          console.log(`GAMESERVER: Player ${id} connected`);
-
-          const actorRef = spawn(PlayerConnection.withContext({ id, socket: e.socket }), `player-${id}`);
-
-          return { ...ctx.players, [id]: actorRef };
-        },
-      }),
-    },
-
-    PLAYER_DISCONNECTED: {
-      actions: assign({
-        players: (ctx, e) => {
-          console.log(`GAMESERVER: Player ${e.id} disconnected`);
-          ctx.players[e.id]?.stop?.();
-          return without(e.id, ctx.players);
-        },
-      }),
-    },
-
-    PLAYER_IDENTIFY: {
-      actions: (ctx, e) => {
-        ctx.players[e.id].send({ type: "IDENTITY_CONFIRM" });
-      },
-    },
-  },
-  states: {
-    lobby: {},
-  },
-});
-
-interface PlayerConnectionContext {
-  socket: WebSocket;
+interface Player {
   id: string;
+  connRef: SpawnedActorRef<PlayerConnectionEvent>;
   nickname?: string;
 }
 
-type PlayerConnectionEvents =
-  | { type: "IDENTIFY"; nickname: string }
-  | { type: "DISCONNECTED" }
-  | { type: "IDENTITY_CONFIRM" }
-  | { type: "IDENTITY_REJECT" };
+interface GameServerContext {
+  world: World;
+  players: Record<string, Player>;
+}
 
-const PlayerConnection = Machine<PlayerConnectionContext, PlayerConnectionEvents>({
-  id: "client-actor",
-  initial: "connected",
-  entry: (ctx) => {
-    console.log(`GAMESERVER: Actor spawned for player: ${playerName(ctx)}`);
-  },
-  states: {
-    connected: {
-      // after: {
-      //   3000: {
-      //     actions: send("IDENTITY_CONFIRM", { to: "socket" }),
-      //   },
-      // },
-      invoke: {
-        id: "socket",
-        onError: {
-          actions: (ctx, e) => {
-            console.log(`GAMESERVER: ERROR in player actor ${playerName(ctx)}: `, e);
-          },
-        },
-        src: (ctx) => (callback, receive) => {
-          receive((event) => {
-            console.log(`sending event to player ${playerName(ctx)}, event: `, event);
-            ctx.socket.send(JSON.stringify(event));
-          });
+const GameServerMachine = (world: World) =>
+  Machine<GameServerContext, GameServerEvent>({
+    initial: "lobby",
+    context: {
+      world,
+      players: {},
+    },
+    on: {
+      PLAYER_CONNECTED: {
+        actions: assign((ctx, e) => {
+          const id = v4.generate();
+          console.log(`GAMESERVER: Player ${id} connected`);
+          const connRef = spawn(PlayerConnection.withContext({ id, socket: e.socket }), `player-${id}`);
 
-          // TODO callback invoked by XState can't be async because receiving paren events wouldn't work
-          (async () => {
-            for await (const message of ctx.socket) {
-              if (isWebSocketCloseEvent(message)) {
-                callback({ type: "DISCONNECTED" });
-                break;
-              }
-
-              if (message instanceof Uint8Array) {
-                const event = ServerDecoder.decode(message.buffer);
-                console.log(`received event from player: ${playerName(ctx)}, event: `, event);
-                callback(event);
-              } else {
-                console.log(`received invalid data from player: ${playerName(ctx)}, data:`, message);
-                continue;
-              }
-            }
-          })();
-
-          return () => {
-            if (!ctx.socket.isClosed) {
-              ctx.socket.close();
-            }
-          };
-        },
+          ctx.players[id] = { connRef, id };
+        }),
       },
 
-      initial: "waiting_for_id",
-      states: {
-        waiting_for_id: {
-          on: {
-            IDENTIFY: {
-              actions: sendParent((ctx, e) => ({
-                type: "PLAYER_IDENTIFY",
-                id: ctx.id,
-                nickname: e.nickname,
-              })),
-            },
-            IDENTITY_CONFIRM: {
-              target: "idle",
-              actions: forwardTo("socket"),
-            },
-            IDENTITY_REJECT: {
-              actions: forwardTo("socket"),
-            },
+      PLAYER_DISCONNECTED: {
+        actions: [
+          (ctx, e) => {
+            console.log(`GAMESERVER: Player ${e.id} disconnected`);
+            ctx.players[e.id].connRef.stop?.();
           },
-        },
-
-        idle: {},
+          assign((ctx, e) => {
+            delete ctx.players[e.id];
+          }),
+        ],
       },
-      on: {
-        DISCONNECTED: "disconnected",
+
+      PLAYER_IDENTIFY: {
+        actions: actions.choose<GameServerContext, PlayerIdentifyEvent>([
+          {
+            cond: (ctx, e) => Object.values(ctx.players).some((p) => p.nickname === e.nickname),
+            actions: sendToPlayer({ type: "IDENTITY_REJECT", reason: "Nickname already exists" }),
+          },
+          {
+            actions: [
+              assign((ctx, e) => {
+                ctx.players[e.id].nickname = e.nickname;
+              }),
+              sendToPlayer({ type: "IDENTITY_CONFIRM" }),
+            ],
+          },
+        ]),
       },
     },
-
-    disconnected: {
-      entry: sendParent((ctx) => ({ type: "PLAYER_DISCONNECTED", id: ctx.id })),
-      type: "final",
+    states: {
+      lobby: {},
     },
-  },
-});
+  });
 
-type PlayerConnectionRef = ActorRefFrom<Interpreter<PlayerConnectionContext, any, PlayerConnectionEvents>["machine"]>;
+interface PlayerRelatedEvent extends EventObject {
+  id: string;
+}
 
-function playerName(ctx: PlayerConnectionContext): string {
-  if (ctx.nickname == null) {
-    return ctx.id;
-  }
-
-  return `${ctx.id} (${ctx.nickname})`;
+function sendToPlayer<E extends PlayerRelatedEvent>(
+  event: PlayerConnectionEvent
+): SendAction<GameServerContext, E, PlayerConnectionEvent> {
+  return send(event, { to: (ctx, e: E) => `player-${e.id}` });
 }

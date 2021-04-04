@@ -1,9 +1,9 @@
 import ns from "net-serializer";
 
-export class PacketDecoder<P> {
+export class PacketDecoder<P = never> {
   private registered: Record<number, PacketDefinition<any>> = {};
 
-  register<T>(definition: PacketDefinition<T>) {
+  register<T>(definition: PacketDefinition<T>): PacketDecoder<P | T> {
     this.registered[definition.tag] = definition;
     return this;
   }
@@ -11,8 +11,16 @@ export class PacketDecoder<P> {
   decode(buffer: ArrayBufferLike): P {
     const tagView = new DataView(buffer, buffer.byteLength - 1, 1);
     const tag = tagView.getUint8(0);
-    const decoded = ns.unpack(buffer, this.registered[tag].template);
-    decoded.type = this.registered[tag].tagName;
+
+    const definition = this.registered[tag];
+
+    // TODO throw a propper error here
+    if (definition == null) {
+      throw new Error("");
+    }
+
+    const decoded = ns.unpack(buffer, definition.template);
+    decoded.type = definition.tagName;
     return decoded;
   }
 }

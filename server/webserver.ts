@@ -18,20 +18,25 @@ router.get("/game", async (ctx: Context<State>) => {
 interface State {
   gameServer: GameServer;
 }
+
 const app = new Application({
   state: {
     gameServer,
   },
 });
+
 app.use(errorHandler);
 app.use(logMiddleware);
+
 app.use(router.routes());
+
 app.use(async (context) => {
   await context.send({
     root: `${Deno.cwd()}/public`,
     index: "index.html",
   });
 });
+
 app.addEventListener("listen", (event) => {
   console.info(`WEBSERVER: listening on port ${event.port}`);
 });
