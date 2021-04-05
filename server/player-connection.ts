@@ -81,7 +81,7 @@ export const PlayerConnection = Machine<PlayerConnectionContext, PlayerConnectio
             },
             IDENTITY_CONFIRM: {
               target: "idle",
-              actions: sendPacket((ctx, e) => IdentityConfirm({})),
+              actions: sendPacket((ctx, e) => IdentityConfirm()),
             },
             IDENTITY_REJECT: {
               actions: sendPacket((ctx, e) => IdentityReject({ reason: e.reason })),
