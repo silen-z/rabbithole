@@ -100,6 +100,7 @@ const GameServerMachine = (world: World) =>
         actions: [
           (ctx, e) => {
             console.log(`GAMESERVER: Player ${e.id} disconnected`);
+            // TODO error: Uncaught (in promise) TypeError: Cannot read property 'connRef' of undefined
             ctx.players[e.id].connRef.stop?.();
           },
           assign((ctx, e) => {

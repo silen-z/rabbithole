@@ -1,7 +1,7 @@
 import { Machine, send, sendParent, EventObject, SendAction, Sender, AnyEventObject, Receiver } from "xstate";
 import { WebSocket, isWebSocketCloseEvent } from "ws";
-import { ServerDecoder } from "./packet-decoder.ts";
 import { IdentityConfirm, IdentityReject, Identify } from "../shared/packets.ts";
+import { PacketDecoder } from "../shared/libs/packet-lib.ts";
 
 interface PlayerConnectionContext {
   socket: WebSocket;
@@ -112,3 +112,5 @@ function sendPacket<E extends EventObject>(
 function playerName(ctx: PlayerConnectionContext): string {
   return `${ctx.id}`;
 }
+
+const ServerDecoder = new PacketDecoder().register(Identify);

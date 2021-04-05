@@ -7,6 +7,7 @@
     "xstate": "https://cdn.skypack.dev/xstate@^v4.17.1?dts",
     "@xstate/immer": "https://cdn.skypack.dev/@xstate/immer?dts",
     "ts-binary-serializer": "https://cdn.skypack.dev/ts-binary-serializer?dts",
-    "net-serializer": "https://cdn.skypack.dev/net-serializer?dts"
+    "net-serializer": "https://cdn.skypack.dev/net-serializer?dts",
+    "packet-lib": "./shared/libs/packet-lib.ts"
   }
 }

@@ -1,6 +1,11 @@
 import { Machine, assign, forwardTo, send, sendParent, Sender, Receiver, AnyEventObject } from "xstate";
 import { ClientEvent } from "./client";
-import { ClientDecoder } from "./client-packet-decoder";
+
+// TODO VSCode show the "any" type here, is need a better way to import packet-lib than tsconfig.json "paths"
+import { IdentityConfirm, IdentityReject } from "../shared/packets";
+import { PacketDecoder } from "../shared/libs/packet-lib";
+
+export const ClientDecoder = new PacketDecoder().register(IdentityConfirm).register(IdentityReject);
 
 export type ConnectionEvent =
   | { type: "CONNECT"; address: string }
