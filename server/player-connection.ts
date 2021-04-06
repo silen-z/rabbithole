@@ -1,7 +1,8 @@
 import { Machine, send, sendParent, EventObject, SendAction, Sender, AnyEventObject, Receiver } from "xstate";
 import { WebSocket, isWebSocketCloseEvent } from "ws";
+
 import { IdentityConfirm, IdentityReject, Identify } from "../shared/packets.ts";
-import { PacketDecoder } from "../shared/libs/packet-lib.ts";
+import { PacketDecoder } from "../shared/packet-lib.ts";
 
 interface PlayerConnectionContext {
   socket: WebSocket;

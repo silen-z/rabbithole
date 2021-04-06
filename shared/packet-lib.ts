@@ -1,9 +1,5 @@
 import NetSerializer from "net-serializer";
 
-// =========================================================//
-//             Can't believe all of this works              //
-//==========================================================//
-
 export function definePacket<E extends string, T>(tag: PacketTag, eventName: E): EmptyPacketDefinition<E>;
 export function definePacket<E extends string, T>(
   tag: PacketTag,
@@ -90,14 +86,14 @@ type TypeDef<T extends string> = {
   type: T;
 };
 
-type TemplateTypeToEvent<T> = T extends TypeDef<string>
+type TemplateTypeToEvent<T> = T extends TypeDef<any>
   ? T extends TypeDef<"string">
     ? string
     : T extends TypeDef<"int8" | "uint8" | "int16" | "uint16" | "int32" | "uint32" | "float32">
     ? number
     : T extends TypeDef<"boolean">
     ? boolean
-    : never
+    : T['type']
   : T extends Array<infer E>
   ? Array<TemplateTypeToEvent<E>>
   : { [P in keyof T]: TemplateTypeToEvent<T[P]> };

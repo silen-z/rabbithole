@@ -8,8 +8,7 @@
     "pixi.js": "^6.0.1",
     "react": "17.0.2",
     "react-dom": "17.0.2",
-    "xstate": "^4.17.1",
-    "packet-lib": "file:shared/packet-lib.ts"
+    "xstate": "^4.17.1"
   },
   "devDependencies": {
     "esbuild": "^0.11.2",
@@ -17,8 +16,8 @@
     "@types/react-dom": "^17.0.3"
   },
   "scripts": {
-    "watch": "esbuild ./client/client.ts --bundle --watch --define:process.env.NODE_ENV='development' --outfile=./public/dist/client.js",
-    "dist": "esbuild ./client/client.ts --bundle --minify --define:process.env.NODE_ENV='production' --outfile=./public/dist/client.js",
+    "watch": "esbuild ./client/client.ts --bundle --watch --define:process.env.NODE_ENV='development' --preserve-symlinks --outfile=./public/dist/client.js",
+    "dist": "esbuild ./client/client.ts --bundle --minify --define:process.env.NODE_ENV='production' --preserve-symlinks --outfile=./public/dist/client.js",
     "server": "deno run --import-map=./server/imports.json --allow-env --allow-net --allow-read --location http://localhost ./server/webserver.ts"
   },
   "author": "Pavel Hrách <pavel@hrach.email>",
