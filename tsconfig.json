@@ -1,0 +1,12 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "downlevelIteration": true,
+    "lib": ["DOM", "ES2015", "deno.ns"],
+
+    // linter checks
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitReturns": true,
+    "noUncheckedIndexedAccess": true
+  }
+}

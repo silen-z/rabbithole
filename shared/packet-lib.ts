@@ -27,6 +27,8 @@ export function definePacket<E, T>(tag: PacketTag, eventName: E, template?: T): 
   return encoder;
 }
 
+
+
 export class PacketDecoder<P = never> {
   private registered: Partial<Record<PacketTag, PacketDefinition<any, any>>> = {};
 

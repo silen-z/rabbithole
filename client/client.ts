@@ -1,56 +1,53 @@
-import { World } from "ecsy";
-import * as PIXI from "pixi.js";
 import { Machine, interpret, assign, State, send, SpawnedActorRef } from "xstate";
-import { TickScheduler } from "../shared/tickscheduler";
-import { Connection, ConnectionEvent } from "./connection";
-import { RenderingSystem, Sprite } from "./rendering-system";
-import { UiControl } from "./ui";
-import { Identify } from "../shared/packets";
+import { TickScheduler } from "../shared/tickscheduler.ts";
+import { Connection, ConnectionEvent } from "./connection.ts";
+import { World } from "../shared/ecs.ts";
+import { Renderer, renderingSystem } from "./renderer.ts";
+import { Ui } from "./ui.tsx";
+import { Identify } from "../shared/packets.ts";
+import { Loader } from "./assets.ts";
 
 class Client {
-  world = new World();
+  world = new World().addResources({ renderer: this.renderer }).registerSystem(renderingSystem);
+
+  loader = new Loader("/sprites/");
+
   tickScheduler = new TickScheduler();
-  service = interpret(ClientStateMachine, {
+
+  service = interpret(ClientStateMachine(this.world as World<unknown>, Connection("ws://localhost:8000/game")), {
     clock: this.tickScheduler,
   });
-  changedState?: ClientState;
 
-  constructor(private renderer: PIXI.Application, private ui: UiControl) {
+  constructor(private renderer: Renderer, private ui: Ui) {
     this.service.onTransition((state) => {
-      this.ui.rerender(state, this.service.send);
+      this.ui.update(state, this.service.send);
     });
-
-    this.world.registerComponent(Sprite);
-    this.world.registerSystem(RenderingSystem, { stage: this.renderer.stage });
   }
 
   start() {
     this.service.start();
 
-    PIXI.Loader.shared.add("sprites/spaceship.png").load(() => {
-      let handle = new PIXI.Sprite(PIXI.Loader.shared.resources["sprites/spaceship.png"]!.texture);
-      this.world.createEntity("test-object").addComponent(Sprite, { handle });
-    });
+    this.loader.load("spaceship.png", () => {});
 
     let lastFrame = performance.now();
 
     const loop = (timestamp: number) => {
       const elapsed = timestamp - lastFrame;
-      lastFrame = timestamp;
       const delta = elapsed / 1000;
 
       this.tickScheduler.tick(elapsed);
       this.world.execute(delta, timestamp);
-      this.renderer.render();
 
-      requestAnimationFrame(loop);
+      lastFrame = timestamp;
+      window.requestAnimationFrame(loop);
     };
 
-    requestAnimationFrame(loop);
+    window.requestAnimationFrame(loop);
   }
 }
 
 interface ClientStateContext {
+  world: World<unknown>;
   identityRejectReason?: string;
   socketQueue?: ClientEvent[];
   connRef?: SpawnedActorRef<ConnectionEvent>;
@@ -64,77 +61,71 @@ export type ClientEvent =
   | { type: "SOCKET_READY" }
   | { type: "OPEN_CONNECTION" };
 
-const ClientStateMachine = Machine<ClientStateContext, ClientEvent>({
-  strict: true,
-  initial: "unidentified",
-  context: {},
-  invoke: {
-    id: "connection",
-    src: Connection("ws://localhost:8000/game"),
-  },
-  states: {
-    unidentified: {
-      initial: "selecting_name",
-      states: {
-        selecting_name: {
-          on: {
-            IDENTIFY: {
-              target: "waiting_for_confirm",
-              actions: [
-                send({ type: "CONNECT" }, { to: "connection" }),
-                send(
-                  (_, e) => ({
-                    type: "SEND",
-                    packet: Identify({ nickname: e.nickname }),
-                  }),
-                  { to: "connection" }
-                ),
-              ],
-            },
-          },
-        },
-        waiting_for_confirm: {
-          entry: assign({ identityRejectReason: (_) => undefined }),
-          on: {
-            IDENTITY_CONFIRM: "identified",
-            IDENTITY_REJECT: {
-              target: "selecting_name",
-              actions: assign({
-                identityRejectReason: (_, e) => e.reason,
-              }),
-            },
-          },
-          after: {
-            // timeout
-            5000: {
-              target: "selecting_name",
-              actions: assign({
-                identityRejectReason: (_) => "timed out",
-              }),
-            },
-          },
-        },
-        identified: {
-          type: "final",
-        },
-      },
-      onDone: "idle",
+const ClientStateMachine = (world: World<unknown>, connection: Connection) =>
+  Machine<ClientStateContext, ClientEvent>({
+    strict: true,
+    initial: "unidentified",
+    context: { world },
+    invoke: {
+      id: "connection",
+      src: connection,
     },
-    idle: {},
-  },
-});
+    states: {
+      unidentified: {
+        initial: "selecting_name",
+        states: {
+          selecting_name: {
+            on: {
+              IDENTIFY: {
+                target: "waiting_for_confirm",
+                actions: [
+                  send({ type: "CONNECT" }, { to: "connection" }),
+                  send(
+                    (_, e) => ({
+                      type: "SEND",
+                      packet: Identify({ nickname: e.nickname }),
+                    }),
+                    { to: "connection" }
+                  ),
+                ],
+              },
+            },
+          },
+          waiting_for_confirm: {
+            entry: assign({ identityRejectReason: (_) => undefined }),
+            on: {
+              IDENTITY_CONFIRM: "identified",
+              IDENTITY_REJECT: {
+                target: "selecting_name",
+                actions: assign({
+                  identityRejectReason: (_, e) => e.reason,
+                }),
+              },
+            },
+            after: {
+              // timeout
+              5000: {
+                target: "selecting_name",
+                actions: assign({
+                  identityRejectReason: (_) => "timed out",
+                }),
+              },
+            },
+          },
+          identified: {
+            type: "final",
+          },
+        },
+        onDone: "idle",
+      },
+      idle: {},
+    },
+  });
 
 export type ClientState = State<ClientStateContext, ClientEvent>;
 
-let renderer = new PIXI.Application({
-  resizeTo: document.body,
-  autoStart: false,
-  backgroundColor: 0x001418,
-});
-document.body.append(renderer.view);
+const renderer = new Renderer(window.document.getElementsByTagName("canvas")[0]!);
+const ui = new Ui(window.document.getElementById("ui")!);
+const client = new Client(renderer, ui);
 
-let ui = new UiControl(document.getElementById("ui")!);
-let client = new Client(renderer, ui);
-
-PIXI.Ticker.shared.stop();
 client.start();

@@ -1,8 +1,8 @@
 import { Machine, assign, forwardTo, send, sendParent, Sender, Receiver, AnyEventObject } from "xstate";
-import { ClientEvent } from "./client";
+import { ClientEvent } from "./client.ts";
 
-import { IdentityConfirm, IdentityReject } from "../shared/packets";
-import { PacketDecoder } from "../shared/packet-lib";
+import { IdentityConfirm, IdentityReject } from "../shared/packets.ts";
+import { PacketDecoder } from "../shared/packet-lib.ts";
 
 export const ClientDecoder = new PacketDecoder().register(IdentityConfirm).register(IdentityReject);
 
@@ -19,6 +19,7 @@ interface ConnectionContext {
   queue: ArrayBuffer[];
 }
 
+export type Connection = ReturnType<typeof Connection>;
 export const Connection = (address: string) =>
   Machine<ConnectionContext, ConnectionEvent>({
     strict: true,
@@ -76,7 +77,7 @@ export const Connection = (address: string) =>
             },
           },
           src: (ctx) => (sender: Sender<ConnectionEvent>, receiver: Receiver<ConnectionEvent | AnyEventObject>) => {
-            let socket = new WebSocket(ctx.address);
+            const socket = new WebSocket(ctx.address);
 
             receiver((event) => {
               if (event.type === "SEND") {

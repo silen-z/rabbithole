@@ -1,27 +1,27 @@
-import * as React from "react";
+import React from "react";
 import { render } from "react-dom";
-import type { ClientState, ClientEvent } from "./client";
+import type { ClientState, ClientEvent } from "./client.ts";
 
 interface ClientStateContext {
-  state: ClientState;
+  state: ClientState<unknown>;
   dispatch: (event: ClientEvent) => void;
 }
 const ClientStateContext = React.createContext<ClientStateContext>(null!);
 
-export class UiControl {
+export class Ui {
   constructor(private container: HTMLElement) {}
 
-  rerender(state: ClientState, dispatch: (event: ClientEvent) => void) {
+  update(state: ClientState<unknown>, dispatch: (event: ClientEvent) => void) {
     render(
       <ClientStateContext.Provider value={{ state, dispatch }}>
-        <Ui />
+        <UiComponent />
       </ClientStateContext.Provider>,
       this.container
     );
   }
 }
 
-function Ui() {
+function UiComponent() {
   const { state } = React.useContext(ClientStateContext);
   if (state.matches("unidentified")) {
     return <LoginScreen />;

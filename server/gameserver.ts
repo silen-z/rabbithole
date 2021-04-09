@@ -1,7 +1,7 @@
 import { Machine, interpret, spawn, send, actions, SendAction, EventObject, SpawnedActorRef } from "xstate";
 import { assign } from "@xstate/immer";
-import { World, System } from "ecsy";
 import { WebSocket } from "ws";
+import { World } from "../shared/ecs.ts";
 import { v4 } from "uuid";
 
 import type { Configuration } from "./configuration.ts";
@@ -15,9 +15,7 @@ export class GameServer {
 
   service = interpret(GameServerMachine(this.world), { clock: this.tickScheduler });
 
-  constructor(private config: Configuration) {
-    this.world.registerSystem(LobbySystem, { gameState: this.service });
-  }
+  constructor(private config: Configuration) {}
 
   start() {
     console.log(`GAMESERVER: starting...`);
@@ -45,17 +43,6 @@ export class GameServer {
   }
 }
 
-class LobbySystem extends System {
-  gameService!: GameServer["service"];
-  enabled = false;
-
-  init(attrs: { gameService: GameServer["service"] }) {
-    this.gameService = attrs.gameService;
-  }
-
-  execute() {}
-}
-
 type PlayerIdentifyEvent = {
   type: "PLAYER_IDENTIFY";
   id: string;
@@ -74,11 +61,11 @@ interface Player {
 }
 
 interface GameServerContext {
-  world: World;
+  world: World<unknown>;
   players: Record<string, Player>;
 }
 
-const GameServerMachine = (world: World) =>
+const GameServerMachine = (world: World<unknown>) =>
   Machine<GameServerContext, GameServerEvent>({
     initial: "lobby",
     context: {
@@ -101,7 +88,7 @@ const GameServerMachine = (world: World) =>
           (ctx, e) => {
             console.log(`GAMESERVER: Player ${e.id} disconnected`);
             // TODO error: Uncaught (in promise) TypeError: Cannot read property 'connRef' of undefined
-            ctx.players[e.id].connRef.stop?.();
+            ctx.players[e.id]?.connRef.stop?.();
           },
           assign((ctx, e) => {
             delete ctx.players[e.id];
@@ -118,7 +105,7 @@ const GameServerMachine = (world: World) =>
           {
             actions: [
               assign((ctx, e) => {
-                ctx.players[e.id].nickname = e.nickname;
+                ctx.players[e.id]!.nickname = e.nickname;
               }),
               sendToPlayer({ type: "IDENTITY_CONFIRM" }),
             ],
@@ -138,5 +125,5 @@ interface PlayerRelatedEvent extends EventObject {
 function sendToPlayer<E extends PlayerRelatedEvent>(
   event: PlayerConnectionEvent
 ): SendAction<GameServerContext, E, PlayerConnectionEvent> {
-  return send(event, { to: (ctx, e: E) => `player-${e.id}` });
+  return send(event, { to: (_, e: E) => `player-${e.id}` });
 }

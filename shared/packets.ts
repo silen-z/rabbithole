@@ -1,5 +1,4 @@
-// @deno-types="./packet-lib.ts" TODO until TypeScript and Deno solve shared modules, specifically allowing .ts extension in tsc
-import { definePacket, EventFromDefinition } from "./packet-lib";
+import { definePacket, EventFromDefinition } from "./packet-lib.ts";
 
 export type Identify = EventFromDefinition<typeof Identify>;
 export const Identify = definePacket(0, "IDENTIFY", {
