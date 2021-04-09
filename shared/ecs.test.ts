@@ -45,5 +45,6 @@ Deno.test("simple queries", () => {
 // TODO special handling for tag components
 Deno.test("defining and creating tag component", () => {
   const Tag = component();
-  const t = Tag();
+  const w = new World();
+  const e = w.spawn(Tag());
 });

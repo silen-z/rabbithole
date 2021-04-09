@@ -16,25 +16,10 @@ type ComponentToInsert<T> = {
   data: T;
 };
 
-export function component<T = void>(name = "<unnamed>"): ComponentDefinition<T> {
-  const id = Symbol(name) as ComponentId;
-  const creator = (data: T) => ({ id, data });
-  creator.id = id;
-  return creator;
-}
-
 interface System<R> {
   id: symbol;
   fn: (resources: R) => void;
   enabled: boolean;
-}
-
-export function system<R>(fn: (resources: R) => void): System<R> {
-  return {
-    id: Symbol(),
-    fn,
-    enabled: true,
-  };
 }
 
 type ArchetypeId = symbol;
@@ -77,7 +62,7 @@ export class World<R> {
     }
   }
 
-  spawn(...components: ComponentToInsert<unknown>[]) {
+  spawn(...components: ComponentToInsert<unknown>[]): Entity {
     const entity = this.lastEntity++ as Entity;
 
     const archetype = this.findArchetype(this.emptyArchetype, components);
@@ -108,14 +93,17 @@ export class World<R> {
     }
     // otherwise the entity has to be moved to a new archetype
 
-    // traverse the graph to the new archetype, registering component and creating archetypes if needed
+    // traverse the archetype graph, registering unknown components and creating archetypes when needed
     const newArchetype = this.findArchetype(oldArchetype, components);
 
+    // move data from old archetype
     const { newIndex, movedEntity } = oldArchetype.moveTo(newArchetype, meta.index);
+    // when entity gets swapped in old archetype, it needs its index updated
     if (movedEntity != null) {
       this.entities.get(movedEntity)!.index = meta.index;
     }
 
+    // insert the data
     for (const { id, data } of components) {
       newArchetype.set(id, newIndex, data);
     }
@@ -261,6 +249,21 @@ class Archetype {
   set(component: ComponentId, index: number, data: unknown) {
     this.components.get(component)![index] = data;
   }
+}
+
+export function component<T = void>(name = "<unnamed>"): ComponentDefinition<T> {
+  const id = Symbol(name) as ComponentId;
+  const creator = (data: T) => ({ id, data });
+  creator.id = id;
+  return creator;
+}
+
+export function system<R>(fn: (resources: R) => void): System<R> {
+  return {
+    id: Symbol(),
+    fn,
+    enabled: true,
+  };
 }
 
 type Assign<P, N> = { [K in keyof (P & N)]: K extends keyof N ? N[K] : K extends keyof P ? P[K] : never };

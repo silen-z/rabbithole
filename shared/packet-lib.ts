@@ -38,9 +38,8 @@ export class PacketDecoder<P = never> {
 
     const definition = this.registered[tag];
 
-    // TODO throw a propper error here
     if (definition == null) {
-      throw new Error("missing packet definition");
+      throw new Error(`packet with tag '${tag}' is not registered with this decoder`);
     }
 
     if (definition.template != null) {
