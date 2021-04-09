@@ -1,22 +1,24 @@
-import { swapRemove } from "./utils.ts";
+import { swapRemove, findSingleDiff } from "./utils.ts";
 
-// trick to make a opaque type
-// declare const EntityType: unique symbol;
-// type Entity = number & { [EntityType]: true };
-type Entity = number;
-// const Entity = component<never>();
+declare const EntityTag: unique symbol;
+type Entity = number & { [EntityTag]: true };
 
 declare const ComponentTag: unique symbol;
 type ComponentId = symbol & { [ComponentTag]: true };
 
 interface ComponentDefinition<T> {
   id: ComponentId;
-  (data: T): [ComponentId, T];
+  (data: T): ComponentToInsert<T>;
 }
 
-export function component<T = never>(name = "<unnamed>"): ComponentDefinition<T> {
+type ComponentToInsert<T> = {
+  id: ComponentId;
+  data: T;
+};
+
+export function component<T = void>(name = "<unnamed>"): ComponentDefinition<T> {
   const id = Symbol(name) as ComponentId;
-  const creator = (c: T) => [id, c] as [ComponentId, T];
+  const creator = (data: T) => ({ id, data });
   creator.id = id;
   return creator;
 }
@@ -53,10 +55,10 @@ interface Query<T> {
 
 export class World<R> {
   private lastEntity = 0;
-  private emptyArchetype = Symbol("empty-archetype");
+  private emptyArchetype = new Archetype(new Set());
   private systems: Map<symbol, System<R>> = new Map();
   private entities: Map<Entity, EntityMeta> = new Map();
-  private archetypes: Map<ArchetypeId, Archetype> = new Map().set(this.emptyArchetype, new Archetype(new Set()));
+  private archetypes: Map<ArchetypeId, Archetype> = new Map().set(this.emptyArchetype.id, this.emptyArchetype);
   private components: Set<ComponentId> = new Set();
   // private archetypeGraph
 
@@ -75,28 +77,31 @@ export class World<R> {
     }
   }
 
-  // TODO generation and rollover?
-  spawn() {
+  spawn(...components: ComponentToInsert<unknown>[]) {
     const entity = this.lastEntity++ as Entity;
 
-    const emptyArchetype = this.archetypes.get(this.emptyArchetype)!;
+    const archetype = this.findArchetype(this.emptyArchetype, components);
 
-    const index = emptyArchetype.entities.push(entity) - 1;
+    const index = archetype.entities.push(entity) - 1;
+    for (const { id, data } of components) {
+      archetype.set(id, index, data);
+    }
 
-    this.entities.set(entity, { type: this.emptyArchetype, index });
+    this.entities.set(entity, { type: this.emptyArchetype.id, index });
+
     return entity;
   }
 
-  insert(entity: Entity, ...components: [ComponentId, unknown][]) {
+  insert(entity: Entity, ...components: { id: ComponentId; data: unknown }[]) {
     const meta = this.entities.get(entity);
     if (meta == null) {
       throw new Error(`entity ${entity} doesn't exist`);
     }
     const oldArchetype = this.archetypes.get(meta.type)!;
 
-    // if current archetype has all inserted component just set them
-    if (components.every(([id]) => oldArchetype.type.has(id))) {
-      for (const [id, data] of components) {
+    // if current archetype has all inserted component just replace them
+    if (components.every(({ id }) => oldArchetype.type.has(id))) {
+      for (const { id, data } of components) {
         oldArchetype.set(id, meta.index, data);
       }
       return;
@@ -104,31 +109,18 @@ export class World<R> {
     // otherwise the entity has to be moved to a new archetype
 
     // traverse the graph to the new archetype, registering component and creating archetypes if needed
-    let newArchetype = oldArchetype;
-    let newArchetypeId: ArchetypeId;
-    for (const [id] of components) {
-      if (oldArchetype.type.has(id)) {
-        continue;
-      }
-      if (!newArchetype.edges.has(id)) {
-        this.registerComponentId(id);
-      }
-      const edge = newArchetype.edges.get(id)!;
-
-      newArchetypeId = edge.add || this.createArchetype(new Set(newArchetype.type).add(id));
-      newArchetype = this.archetypes.get(newArchetypeId)!;
-    }
+    const newArchetype = this.findArchetype(oldArchetype, components);
 
     const { newIndex, movedEntity } = oldArchetype.moveTo(newArchetype, meta.index);
     if (movedEntity != null) {
       this.entities.get(movedEntity)!.index = meta.index;
     }
 
-    for (const [id, data] of components) {
+    for (const { id, data } of components) {
       newArchetype.set(id, newIndex, data);
     }
 
-    meta.type = newArchetypeId!;
+    meta.type = newArchetype.id;
     meta.index = newIndex;
   }
 
@@ -143,7 +135,7 @@ export class World<R> {
       return null;
     }
 
-    return archetype.components.get(component.id)![meta.index] as T | null;
+    return archetype.get(component.id, meta.index) as T | null;
   }
 
   query<C1, C2>(c1: ComponentDefinition<C1>): Query<C1>;
@@ -156,8 +148,6 @@ export class World<R> {
         archetypes.push(a);
       }
     }
-
-    console.log(archetypes)
 
     return {
       *[Symbol.iterator]() {
@@ -189,7 +179,6 @@ export class World<R> {
   }
 
   private registerComponentId(id: ComponentId) {
-    console.log(`registering ${id.description} component`);
     for (const archetype of this.archetypes.values()) {
       archetype.edges.set(id, { add: null, remove: null });
     }
@@ -197,35 +186,49 @@ export class World<R> {
     this.components.add(id);
   }
 
-  private createArchetype(type: Set<ComponentId>): ArchetypeId {
-    const newId = Symbol();
+  private findArchetype(start: Archetype, componentsToAdd: Iterable<ComponentToInsert<unknown>>): Archetype {
+    let newArchetype = start;
+    for (const { id } of componentsToAdd) {
+      if (start.type.has(id)) {
+        continue;
+      }
+      if (!newArchetype.edges.has(id)) {
+        this.registerComponentId(id);
+      }
+      const edge = newArchetype.edges.get(id)!;
+
+      newArchetype =
+        edge.add != null ? this.archetypes.get(edge.add)! : this.createArchetype(new Set(newArchetype.type).add(id));
+    }
+
+    return newArchetype;
+  }
+
+  private createArchetype(type: Set<ComponentId>): Archetype {
     const newArchetype = new Archetype(type);
 
     for (const [id, archetype] of this.archetypes) {
       const additionalComponent = findSingleDiff(type, archetype.type);
       if (additionalComponent != null) {
-        archetype.edges.get(additionalComponent)!.add = newId;
+        archetype.edges.get(additionalComponent)!.add = newArchetype.id;
         newArchetype.edges.set(additionalComponent, { add: null, remove: id });
       }
 
       const missingComponent = findSingleDiff(archetype.type, type);
       if (missingComponent != null) {
-        archetype.edges.get(missingComponent)!.remove = newId;
+        archetype.edges.get(missingComponent)!.remove = newArchetype.id;
         newArchetype.edges.set(missingComponent, { add: id, remove: null });
       }
     }
 
-    this.archetypes.set(newId, newArchetype);
+    this.archetypes.set(newArchetype.id, newArchetype);
 
-    return newId;
+    return newArchetype;
   }
-
-  // private hasComponent(entity: Entity, component: ComponentId) {
-  //   this.entities.get(entity)!.type.includes(component);
-  // }
 }
 
 class Archetype {
+  id = Symbol();
   entities: Entity[] = [];
   edges: Map<ComponentId, Edge> = new Map();
   components: Map<ComponentId, unknown[]>;
@@ -237,7 +240,7 @@ class Archetype {
     }
   }
 
-  moveTo(newArchetype: Archetype, oldIndex: number): { newIndex: number; movedEntity?: number } {
+  moveTo(newArchetype: Archetype, oldIndex: number): { newIndex: number; movedEntity?: Entity } {
     const entity = swapRemove(this.entities, oldIndex);
     const newIndex = newArchetype.entities.push(entity) - 1;
 
@@ -258,37 +261,6 @@ class Archetype {
   set(component: ComponentId, index: number, data: unknown) {
     this.components.get(component)![index] = data;
   }
-}
-
-// class EntityBuilder<R> {
-//   constructor(private world: World<R>) {
-
-//   }
-
-//   addComponent() {
-
-//   }
-// }
-
-// creating: [A, B, C]
-
-// found subset [A,T] -> T
-
-function findSingleDiff<T>(superset: Set<T>, subset: Set<T>): T | null {
-  if (superset.size !== subset.size + 1) {
-    return null;
-  }
-
-  const result = new Set(superset);
-  for (const e of subset) {
-    result.delete(e);
-  }
-
-  if (result.size === 1) {
-    return [...result][0]!;
-  }
-
-  return null;
 }
 
 type Assign<P, N> = { [K in keyof (P & N)]: K extends keyof N ? N[K] : K extends keyof P ? P[K] : never };

@@ -22,7 +22,7 @@ Deno.test("insert and get component", () => {
 
   w.insert(e, p1, Velocity(2));
 
-  assertEquals(p1[1], w.get(e, Position));
+  assertEquals(p1.data, w.get(e, Position));
 });
 
 Deno.test("simple queries", () => {
@@ -39,9 +39,11 @@ Deno.test("simple queries", () => {
     vs.push(v);
   }
 
-  // assertEquals(vs.length, 2);
   assertArrayIncludes(vs, [1, 2]);
 });
 
-// for (const [p1, p2] of world.query(Position, Velocity)) {
-// }
+// TODO special handling for tag components
+Deno.test("defining and creating tag component", () => {
+  const Tag = component();
+  const t = Tag();
+});

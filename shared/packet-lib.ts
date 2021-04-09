@@ -7,32 +7,25 @@ export function definePacket<E extends string, T>(
   template: T
 ): DataPacketDefinition<E, T>;
 export function definePacket<E, T>(tag: PacketTag, eventName: E, template?: T): PacketDefinition<E, T> {
-  let encoder: any;
+  if (template == null) {
+    return Object.assign(() => Uint8Array.from([tag]).buffer, { tag, eventName });
+  }
 
-  if (template != null) {
-    encoder = (data: any) => {
+  return Object.assign(
+    (data: Omit<TemplateToEvent<E, T>, "type">) => {
       const buffer = NetSerializer.pack(data, template, { freeBytes: 1 });
       const tagView = new DataView(buffer, buffer.byteLength - 1, 1);
       tagView.setUint8(0, tag);
       return buffer;
-    };
-  } else {
-    encoder = () => Uint8Array.from([tag]).buffer;
-  }
-
-  encoder.tag = tag;
-  encoder.eventName = eventName;
-  encoder.template = template;
-
-  return encoder;
+    },
+    { tag, eventName, template }
+  );
 }
 
-
-
 export class PacketDecoder<P = never> {
-  private registered: Partial<Record<PacketTag, PacketDefinition<any, any>>> = {};
+  private registered: Partial<Record<PacketTag, PacketDefinition<unknown, unknown>>> = {};
 
-  register<D extends PacketDefinition<any, any>>(
+  register<D extends PacketDefinition<unknown, unknown>>(
     definition: D
   ): PacketDecoder<P | EventFromDefinition<typeof definition>> {
     this.registered[definition.tag] = definition;
@@ -57,28 +50,31 @@ export class PacketDecoder<P = never> {
       };
     }
 
-    return { type: definition.eventName } as any;
+    return ({ type: definition.eventName } as unknown) as P;
   }
 }
 
 interface PacketDefinition<E, T> {
   tag: PacketTag;
   eventName: E;
-  template: T;
+  template?: T;
 }
 
 interface DataPacketDefinition<E, T> extends PacketDefinition<E, T> {
+  template: T;
   (data: Omit<TemplateToEvent<E, T>, "type">): ArrayBuffer;
 }
 
-interface EmptyPacketDefinition<E> extends PacketDefinition<E, "empty_packet"> {
+interface EmptyPacketDefinition<E> extends PacketDefinition<E, undefined> {
   (): ArrayBuffer;
 }
 
-export type EventFromDefinition<P extends PacketDefinition<any, any>> = TemplateToEvent<P["eventName"], P["template"]>;
+export type EventFromDefinition<P extends PacketDefinition<unknown, unknown>> = TemplateToEvent<
+  P["eventName"],
+  P["template"]
+>;
 
-// TODO can I signal empty_packet better?
-type TemplateToEvent<E, T> = T extends "empty_packet"
+type TemplateToEvent<E, T> = T extends undefined
   ? { type: E }
   : { type: E } & {
       [K in keyof T]: TemplateTypeToEvent<T[K]>;
@@ -88,14 +84,14 @@ type TypeDef<T extends string> = {
   type: T;
 };
 
-type TemplateTypeToEvent<T> = T extends TypeDef<any>
+type TemplateTypeToEvent<T> = T extends TypeDef<string>
   ? T extends TypeDef<"string">
     ? string
     : T extends TypeDef<"int8" | "uint8" | "int16" | "uint16" | "int32" | "uint32" | "float32">
     ? number
     : T extends TypeDef<"boolean">
     ? boolean
-    : T['type']
+    : T["type"]
   : T extends Array<infer E>
   ? Array<TemplateTypeToEvent<E>>
   : { [P in keyof T]: TemplateTypeToEvent<T[P]> };
