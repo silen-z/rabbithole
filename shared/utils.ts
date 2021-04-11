@@ -30,3 +30,6 @@ export function findSingleDiff<T>(superset: Set<T>, subset: Set<T>): T | null {
 
   return null;
 }
+
+export type Assign<P, N> = { [K in keyof (P & N)]: K extends keyof N ? N[K] : K extends keyof P ? P[K] : never };
+// type AssignSingleKey<P, K extends string, V> = K extends keyof P ? { [N in K]: V } : P & { [N in K]: V };

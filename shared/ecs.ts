@@ -1,26 +1,10 @@
-import { swapRemove, findSingleDiff } from "./utils.ts";
+import { swapRemove, findSingleDiff, Assign } from "./utils.ts";
 
 declare const EntityTag: unique symbol;
 type Entity = number & { [EntityTag]: true };
 
 declare const ComponentTag: unique symbol;
 type ComponentId = symbol & { [ComponentTag]: true };
-
-interface ComponentDefinition<T> {
-  id: ComponentId;
-  (data: T): ComponentToInsert<T>;
-}
-
-type ComponentToInsert<T> = {
-  id: ComponentId;
-  data: T;
-};
-
-interface System<R> {
-  id: symbol;
-  fn: (resources: R) => void;
-  enabled: boolean;
-}
 
 type ArchetypeId = symbol;
 
@@ -29,35 +13,26 @@ interface EntityMeta {
   index: number;
 }
 
-interface Edge {
-  add: ArchetypeId | null;
-  remove: ArchetypeId | null;
-}
-
-interface Query<T> {
-  [Symbol.iterator]: () => IterableIterator<T>;
-}
-
 export class World<R> {
   private lastEntity = 0;
-  private emptyArchetype = new Archetype(new Set());
+  private components: Set<ComponentId> = new Set();
+  private emptyArchetype = new Archetype(new Set(), this.components);
   private systems: Map<symbol, System<R>> = new Map();
   private entities: Map<Entity, EntityMeta> = new Map();
   private archetypes: Map<ArchetypeId, Archetype> = new Map().set(this.emptyArchetype.id, this.emptyArchetype);
-  private components: Set<ComponentId> = new Set();
-  // private archetypeGraph
 
   resources: R = Object.create(null);
 
-  registerSystem<SR extends R>(system: System<SR>) {
-    this.systems.set(system.id, system as System<R>);
+  registerSystem<SR extends R, Q extends QueryDefinition[]>(system: System<SR, Q>) {
+    this.systems.set(system.id, system as any);
     return this;
   }
 
-  execute(deltaTime: number, timestamp: number) {
+  execute(deltaTime: number) {
     for (const system of this.systems.values()) {
       if (system.enabled) {
-        system.fn(this.resources);
+        const queries = system.queries.map((qd) => this.query(...qd.filters));
+        system.fn(this, ...queries);
       }
     }
   }
@@ -72,7 +47,7 @@ export class World<R> {
       archetype.set(id, index, data);
     }
 
-    this.entities.set(entity, { type: this.emptyArchetype.id, index });
+    this.entities.set(entity, { type: archetype.id, index });
 
     return entity;
   }
@@ -126,31 +101,48 @@ export class World<R> {
     return archetype.get(component.id, meta.index) as T | null;
   }
 
-  query<C1, C2>(c1: ComponentDefinition<C1>): Query<C1>;
-  query<C1, C2>(c1: ComponentDefinition<C1>, c2: ComponentDefinition<C2>): Query<[C1, C2]>;
-  query(...components: ComponentDefinition<unknown>[]): Query<unknown> {
-    const archetypes: Archetype[] = [];
+  // query<C1, C2>(f1: QueryFilter): Query<C1>;
+  // query<C1, C2>(f1: QueryFilter, f2: ComponentDefinition<C2>): Query<[C1, C2]>;
+  query(...filters: QueryFilter[]): Query<unknown[]>;
+  *query(...filters: QueryFilter[]): Query<unknown | unknown[]> {
+    const filteredArchetypes: Archetype[] = [];
 
     for (const a of this.archetypes.values()) {
-      if (components.every((c) => a.type.has(c.id))) {
-        archetypes.push(a);
+      if (filters.every((f) => f.queryType !== "component" || a.type.has(f.id))) {
+        filteredArchetypes.push(a);
       }
     }
 
-    return {
-      *[Symbol.iterator]() {
-        for (const archetype of archetypes) {
-          for (let i = 0; i < archetype.entities.length; i++) {
-            const result =
-              components.length === 1
-                ? archetype.get(components[0]!.id, i)
-                : components.map((c) => archetype.get(c.id, i));
+    const selectedArchetypes: Iterable<Archetype> =
+      filteredArchetypes.length === 0 ? this.archetypes.values() : filteredArchetypes;
 
-            yield result;
+    for (const archetype of selectedArchetypes) {
+      for (let i = 0; i < archetype.entities.length; i++) {
+        const result = [];
+
+        for (const f of filters) {
+          switch (f.queryType) {
+            case "component": {
+              const data = archetype.get(f.id, i);
+
+              result.push(data);
+              break;
+            }
+
+            case "entity": {
+              result.push(archetype.entities[i]);
+              break;
+            }
+
+            default: {
+              throw Error("unimplemented");
+            }
           }
         }
-      },
-    };
+
+        yield result.length === 1 ? result[0] : result;
+      }
+    }
   }
 
   addResources<N>(resources: N): R extends unknown ? World<N> : World<Assign<R, N>> {
@@ -166,6 +158,24 @@ export class World<R> {
     this.registerComponentId(definition.id);
   }
 
+  private findArchetype(start: Archetype, componentsToAdd: Iterable<ComponentToInsert<unknown>>): Archetype {
+    let newArchetype = start;
+    for (const { id } of componentsToAdd) {
+      if (start.type.has(id)) {
+        continue;
+      }
+
+      if (!newArchetype.edges.has(id)) {
+        this.registerComponentId(id);
+      }
+      const edge = newArchetype.edges.get(id)!;
+
+      newArchetype = edge.add != null ? edge.add : this.createArchetype(new Set(newArchetype.type).add(id));
+    }
+
+    return newArchetype;
+  }
+
   private registerComponentId(id: ComponentId) {
     for (const archetype of this.archetypes.values()) {
       archetype.edges.set(id, { add: null, remove: null });
@@ -174,38 +184,20 @@ export class World<R> {
     this.components.add(id);
   }
 
-  private findArchetype(start: Archetype, componentsToAdd: Iterable<ComponentToInsert<unknown>>): Archetype {
-    let newArchetype = start;
-    for (const { id } of componentsToAdd) {
-      if (start.type.has(id)) {
-        continue;
-      }
-      if (!newArchetype.edges.has(id)) {
-        this.registerComponentId(id);
-      }
-      const edge = newArchetype.edges.get(id)!;
-
-      newArchetype =
-        edge.add != null ? this.archetypes.get(edge.add)! : this.createArchetype(new Set(newArchetype.type).add(id));
-    }
-
-    return newArchetype;
-  }
-
   private createArchetype(type: Set<ComponentId>): Archetype {
-    const newArchetype = new Archetype(type);
+    const newArchetype = new Archetype(type, this.components);
 
     for (const [id, archetype] of this.archetypes) {
       const additionalComponent = findSingleDiff(type, archetype.type);
       if (additionalComponent != null) {
-        archetype.edges.get(additionalComponent)!.add = newArchetype.id;
-        newArchetype.edges.set(additionalComponent, { add: null, remove: id });
+        archetype.edges.get(additionalComponent)!.add = newArchetype;
+        newArchetype.edges.set(additionalComponent, { add: null, remove: archetype });
       }
 
       const missingComponent = findSingleDiff(archetype.type, type);
       if (missingComponent != null) {
-        archetype.edges.get(missingComponent)!.remove = newArchetype.id;
-        newArchetype.edges.set(missingComponent, { add: id, remove: null });
+        archetype.edges.get(missingComponent)!.remove = newArchetype;
+        newArchetype.edges.set(missingComponent, { add: archetype, remove: null });
       }
     }
 
@@ -215,16 +207,27 @@ export class World<R> {
   }
 }
 
+interface Query<T> extends Generator<T> {}
+
+interface Edge {
+  add: Archetype | null;
+  remove: Archetype | null;
+}
+
 class Archetype {
-  id = Symbol();
+  id = Archetype.createId(this.type);
   entities: Entity[] = [];
   edges: Map<ComponentId, Edge> = new Map();
-  components: Map<ComponentId, unknown[]>;
+  components: Map<ComponentId, unknown[]> = new Map();
 
-  constructor(public type: Set<ComponentId>) {
-    this.components = new Map();
+  constructor(public type: Set<ComponentId>, registeredComponents: Iterable<ComponentId>) {
+    // init component storages
     for (const c of type) {
       this.components.set(c, []);
+    }
+
+    for (const c of registeredComponents) {
+      this.edges.set(c, { add: null, remove: null });
     }
   }
 
@@ -249,22 +252,130 @@ class Archetype {
   set(component: ComponentId, index: number, data: unknown) {
     this.components.get(component)![index] = data;
   }
+
+  static createId(type: Set<ComponentId>) {
+    const description = Array.from(type)
+      .map((id) => id.description)
+      .join("|");
+    return Symbol(description);
+  }
 }
 
-export function component<T = void>(name = "<unnamed>"): ComponentDefinition<T> {
-  const id = Symbol(name) as ComponentId;
+interface ComponentDefinition<T> {
+  id: ComponentId;
+  queryType: "component";
+  (data: T): ComponentToInsert<T>;
+}
+
+type ComponentToInsert<T> = {
+  id: ComponentId;
+  data: T;
+};
+
+export function component<T>(name?: string): ComponentDefinition<T> {
+  const id = Symbol(name || "<unnamed>") as ComponentId;
   const creator = (data: T) => ({ id, data });
-  creator.id = id;
-  return creator;
+
+  return Object.assign(creator, { id, queryType: "component" as const });
 }
 
-export function system<R>(fn: (resources: R) => void): System<R> {
-  return {
-    id: Symbol(),
-    fn,
-    enabled: true,
-  };
+interface System<R, QS extends QueryDefinition[] = QueryDefinition[]> {
+  id: symbol;
+  fn: (world: World<R>, ...queries: ToSystemParams<QS>) => void;
+  queries: QS;
+  enabled: boolean;
 }
 
-type Assign<P, N> = { [K in keyof (P & N)]: K extends keyof N ? N[K] : K extends keyof P ? P[K] : never };
-// type MergeSingleResource<P, K extends string, V> = K extends keyof P ? { [N in K]: V } : P & { [N in K]: V };
+type QueryFilter =
+  | ComponentDefinition<any>
+  | { queryType: "entity" }
+  | { queryType: "added" }
+  | { queryType: "removed" };
+
+interface QueryDefinition<CS extends QueryFilter[] = QueryFilter[]> {
+  filters: CS;
+}
+
+class SystemBuilderImpl<QS extends QueryDefinition[] = []> {
+  private queries: QueryDefinition[] = [];
+
+  query<F1 extends QueryFilter, FS extends QueryFilter[]>(filter: F1, ...filters: FS): SBWithQuery<QS, [F1, ...FS]> {
+    this.queries.push({ filters: [filter, ...filters] });
+    return this as any;
+  }
+
+  fn<R>(systemFn: (world: World<R>, ...queries: ToSystemParams<QS>) => void): System<R, QS> {
+    return {
+      id: Symbol(),
+      fn: systemFn,
+      queries: this.queries as QS,
+      enabled: true,
+    };
+  }
+
+  static fn<R>(systemFn: (world: World<R>, ...queries: ToSystemParams<[]>) => void) {
+    const builder = new SystemBuilderImpl();
+    return builder.fn(systemFn);
+  }
+
+  static query<F1 extends QueryFilter, FS extends QueryFilter[]>(filter: F1, ...filters: FS) {
+    const builder = new SystemBuilderImpl();
+    return builder.query(filter, ...filters);
+  }
+}
+
+interface SystemBuilder<QS extends QueryDefinition[] = []> {
+  query<F1 extends QueryFilter, FS extends QueryFilter[]>(filter: F1, ...filters: FS): SBWithQuery<QS, [F1, ...FS]>;
+  fn<R>(systemFn: (world: World<R>, ...queries: ToSystemParams<QS>) => void): System<R, QS>;
+}
+
+export const system: SystemBuilder = SystemBuilderImpl;
+
+type SBWithQuery<QS extends QueryDefinition[], Q extends QueryFilter[]> = QS extends []
+  ? SystemBuilder<[QueryDefinition<Q>]>
+  : SystemBuilder<[...QS, QueryDefinition<Q>]>;
+
+const ExampleComponent = component<{ test: number }>("Example");
+
+export const Entity: QueryFilter = { queryType: "entity" };
+
+type ToSystemParams<QS extends QueryDefinition[]> = {
+  [K in keyof QS]: QS[K] extends QueryDefinition<infer QF> ? IterableIterator<ToQueryParams<QF>> : unknown;
+};
+
+type ToQueryParams<QF extends QueryFilter[]> = QF extends [QueryFilter]
+  ? ToQueryParam<QF[0]>
+  : { [K in keyof QF]: ToQueryParam<QF[K]> };
+
+type ToQueryParam<QP> = QP extends { queryType: "entity" }
+  ? Entity
+  : QP extends ComponentDefinition<infer T>
+  ? T
+  : unknown;
+
+interface ExampleResources {
+  time: number;
+}
+
+const ExampleSystem = system
+  .query(Entity, ExampleComponent)
+  .query(ExampleComponent)
+  .fn((world: World<ExampleResources>, q1, q2) => {
+    for (const [entity, example] of q1) {
+      for (const example of q2) {
+      }
+    }
+  });
+
+const ExampleSystemWithoutQueries = system.fn((world) => {});
+
+// seems to lose types along the way, but might be worth exploring further
+// interface QueryDefinition2 {
+//   filters: QueryFilter[];
+// }
+
+// type ToSystemParams2<QS extends QueryDefinition2[]> = {
+//   [K in keyof QS]: QS[K] extends QueryDefinition2
+//     ? IterableIterator<ToQueryParams<QS[K]["filters"]>>
+//     : unknown;
+// };

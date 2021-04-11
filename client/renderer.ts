@@ -1,4 +1,4 @@
-import { system } from "../shared/ecs.ts";
+import { system, component, Entity, World } from "../shared/ecs.ts";
 
 export class Renderer {
   context: CanvasRenderingContext2D;
@@ -14,29 +14,37 @@ export class Renderer {
   }
 }
 
+const Sprite = component<{ handle: number }>("Sprite");
+
 interface RenderResources {
   renderer: Renderer;
-  time: {delta: number}
+  time: { delta: number };
 }
 
-export const renderingSystem = system(({ renderer }: RenderResources) => {
-  renderer.clear();
+export const RenderingSystem = system
+  .query(Entity, Sprite)
+  .query(Sprite)
+  .fn(function (world: World<RenderResources>, sprites, parentTransforms) {
+    for (const [entity, sprite] of sprites) {
+    }
 
-  const ctx = renderer.context;
+    world.resources.renderer.clear();
 
-  ctx.lineWidth = 10;
+    const ctx = world.resources.renderer.context;
 
-  // Wall
-  ctx.strokeRect(75, 140, 150, 110);
+    ctx.lineWidth = 10;
 
-  // Door
-  ctx.fillRect(130, 190, 40, 60);
+    // Wall
+    ctx.strokeRect(75, 140, 150, 110);
 
-  // Roof
-  ctx.beginPath();
-  ctx.moveTo(50, 140);
-  ctx.lineTo(150, 60);
-  ctx.lineTo(250, 140);
-  ctx.closePath();
-  ctx.stroke();
-});
+    // Door
+    ctx.fillRect(130, 190, 40, 60);
+
+    // Roof
+    ctx.beginPath();
+    ctx.moveTo(50, 140);
+    ctx.lineTo(150, 60);
+    ctx.lineTo(250, 140);
+    ctx.closePath();
+    ctx.stroke();
+  });

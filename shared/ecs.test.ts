@@ -1,8 +1,10 @@
 import { assertEquals, assertThrows, assertArrayIncludes } from "https://deno.land/std@0.92.0/testing/asserts.ts";
-import { World, component } from "./ecs.ts";
+import { World, component, system, Entity } from "./ecs.ts";
 
 const Position = component<{ x: number; y: number }>("Position");
-const Velocity = component<number>();
+const Velocity = component<number>("Velocity");
+const Third = component<boolean>("Third");
+
 
 Deno.test("can't register component twice", () => {
   const w = new World();
@@ -42,9 +44,47 @@ Deno.test("simple queries", () => {
   assertArrayIncludes(vs, [1, 2]);
 });
 
-// TODO special handling for tag components
-Deno.test("defining and creating tag component", () => {
+Deno.test("systems", () => {
+  const world = new World();
+
+  world.spawn(Velocity(1));
+  world.spawn(Velocity(2));
+  world.spawn(Velocity(3), Position({ x: 81, y: 42 }));
+  world.spawn(Position({ x: 57, y: 22 }));
+  world.spawn(Third(true));
+  world.spawn(Third(true), Position({ x: 81, y: 42 }) );
+
+  const iterated: number[] = [];
+
+  const TestSystem = system.query(Velocity).fn((w, velocity) => {
+    for (const v of velocity) {
+      iterated.push(v);
+    }
+  });
+
+  world.registerSystem(TestSystem);
+
+  const iteratedEntities = [];
+
+  const TestEntitySystem = system.query(Entity).fn((w, entities) => {
+    for (const e of entities) {
+      iteratedEntities.push(e);
+    }
+  });
+
+  world.registerSystem(TestEntitySystem);
+
+  world.execute(1);
+
+  assertEquals(iterated, [1, 2, 3]);
+  assertEquals(iteratedEntities.length, 4);
+});
+
+// TODO implement proper tag components
+Deno.test("defining and creating empty component", () => {
   const Tag = component();
   const w = new World();
-  const e = w.spawn(Tag());
+  const e = w.spawn(Tag(53));
+
+  const c = w.get(e, Tag);
 });
