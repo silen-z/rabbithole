@@ -1,10 +1,20 @@
-export class Loader {
+export class Assets {
+  private loadedAssets: Map<string, CanvasImageSource> = new Map();
+
   constructor(private basePath: string) {}
 
-  load(path: string, onComplete: () => void): HTMLImageElement {
-    const img = new window.Image();
-    img.src = this.basePath + path;
-    img.addEventListener("load", onComplete);
-    return img;
+  load(path: string): Promise<HTMLImageElement> {
+    return new Promise((resolve) => {
+      const img = new window.Image();
+      img.src = this.basePath + path;
+      img.addEventListener("load", () => {
+        this.loadedAssets.set(path, img);
+        resolve(img);
+      });
+    });
+  }
+
+  get(path: string) {
+    return this.loadedAssets.get(path);
   }
 }

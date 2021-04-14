@@ -3,7 +3,7 @@ import { render } from "react-dom";
 import type { ClientState, ClientEvent } from "./client.ts";
 
 interface ClientStateContext {
-  state: ClientState<unknown>;
+  state: ClientState;
   dispatch: (event: ClientEvent) => void;
 }
 const ClientStateContext = React.createContext<ClientStateContext>(null!);
@@ -11,7 +11,7 @@ const ClientStateContext = React.createContext<ClientStateContext>(null!);
 export class Ui {
   constructor(private container: HTMLElement) {}
 
-  update(state: ClientState<unknown>, dispatch: (event: ClientEvent) => void) {
+  update(state: ClientState, dispatch: (event: ClientEvent) => void) {
     render(
       <ClientStateContext.Provider value={{ state, dispatch }}>
         <UiComponent />

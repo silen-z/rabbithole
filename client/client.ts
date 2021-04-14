@@ -2,15 +2,16 @@ import { Machine, interpret, assign, State, send, SpawnedActorRef } from "xstate
 import { TickScheduler } from "../shared/tickscheduler.ts";
 import { Connection, ConnectionEvent } from "./connection.ts";
 import { World } from "../shared/ecs.ts";
-import { Renderer, renderingSystem } from "./renderer.ts";
+import { Renderer, RenderingSystem } from "./renderer.ts";
 import { Ui } from "./ui.tsx";
 import { Identify } from "../shared/packets.ts";
-import { Loader } from "./assets.ts";
+import { Assets } from "./assets.ts";
+import { JoinScreen } from "./join-screen.ts";
 
 class Client {
-  world = new World().addResources({ renderer: this.renderer }).registerSystem(renderingSystem);
-
-  loader = new Loader("/sprites/");
+  world = new World()
+    .addResources({ delta: 0, renderer: this.renderer, assets: new Assets("/sprites/") })
+    .registerSystem(RenderingSystem);
 
   tickScheduler = new TickScheduler();
 
@@ -27,8 +28,6 @@ class Client {
   start() {
     this.service.start();
 
-    this.loader.load("spaceship.png", () => {});
-
     let lastFrame = performance.now();
 
     const loop = (timestamp: number) => {
@@ -36,7 +35,8 @@ class Client {
       const delta = elapsed / 1000;
 
       this.tickScheduler.tick(elapsed);
-      this.world.execute(delta, timestamp);
+      this.world.resources.delta = delta;
+      this.world.execute();
 
       lastFrame = timestamp;
       window.requestAnimationFrame(loop);
@@ -72,6 +72,13 @@ const ClientStateMachine = (world: World<unknown>, connection: Connection) =>
     },
     states: {
       unidentified: {
+        invoke: {
+          id: "join-systems",
+          src: JoinScreen,
+          data: {
+            world: (ctx: ClientStateContext) => ctx.world,
+          },
+        },
         initial: "selecting_name",
         states: {
           selecting_name: {

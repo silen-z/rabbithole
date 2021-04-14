@@ -9,7 +9,7 @@ import { TickScheduler } from "../shared/tickscheduler.ts";
 import { PlayerConnection, PlayerConnectionEvent } from "./player-connection.ts";
 
 export class GameServer {
-  world = new World();
+  world = new World().addResources({ delta: 0 });
 
   tickScheduler = new TickScheduler();
 
@@ -31,7 +31,8 @@ export class GameServer {
       const elapsed = now - previous;
       const delta = elapsed / 1000;
       this.tickScheduler.tick(elapsed);
-      this.world.execute(delta, now);
+      this.world.resources.delta = delta;
+      this.world.execute();
       previous = now;
     };
 
@@ -60,13 +61,13 @@ interface Player {
   nickname?: string;
 }
 
-interface GameServerContext {
-  world: World<unknown>;
+interface GameServerContext<R> {
+  world: World<R>;
   players: Record<string, Player>;
 }
 
-const GameServerMachine = (world: World<unknown>) =>
-  Machine<GameServerContext, GameServerEvent>({
+const GameServerMachine = <R>(world: World<R>) =>
+  Machine<GameServerContext<R>, GameServerEvent>({
     initial: "lobby",
     context: {
       world,
@@ -97,7 +98,7 @@ const GameServerMachine = (world: World<unknown>) =>
       },
 
       PLAYER_IDENTIFY: {
-        actions: actions.choose<GameServerContext, PlayerIdentifyEvent>([
+        actions: actions.choose<GameServerContext<R>, PlayerIdentifyEvent>([
           {
             cond: (ctx, e) => Object.values(ctx.players).some((p) => p.nickname === e.nickname),
             actions: sendToPlayer({ type: "IDENTITY_REJECT", reason: "Nickname already exists" }),
@@ -124,6 +125,6 @@ interface PlayerRelatedEvent extends EventObject {
 
 function sendToPlayer<E extends PlayerRelatedEvent>(
   event: PlayerConnectionEvent
-): SendAction<GameServerContext, E, PlayerConnectionEvent> {
+): SendAction<GameServerContext<any>, E, PlayerConnectionEvent> {
   return send(event, { to: (_, e: E) => `player-${e.id}` });
 }

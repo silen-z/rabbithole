@@ -1,5 +1,25 @@
-const __dirname = new URL(".", import.meta.url).pathname;
-import { World, component } from "../shared/ecs.ts";
+const PLOTS = [];
+
+export function plotWorld(filename, fn) {
+  PLOTS.push(async () => {
+    const world = fn();
+
+    const cmd = Deno.run({
+      cmd: ["dot", "-Tpng", "-Kcirco", `-ographs/${filename}.png`],
+      stdin: "piped",
+    });
+
+    const encoder = new TextEncoder();
+
+    await cmd.stdin.write(encoder.encode(printArchetypeGraph(world)));
+    cmd.stdin.close();
+    await cmd.status();
+  });
+}
+
+export async function runPlots() {
+  await Promise.all(PLOTS.map((f) => f()));
+}
 
 function printArchetypeGraph(world) {
   const componentNames = new Set();
@@ -43,33 +63,3 @@ function traverseGraph(node, fn) {
     }
   }
 }
-
-const Position = component("Position");
-const Velocity = component("Velocity");
-const Third = component("Third");
-
-const world = new World();
-
-world.spawn(Velocity(1));
-const e = world.spawn(Velocity(2));
-world.spawn(Velocity(3), Position({ x: 81, y: 42 }));
-world.spawn(Position({ x: 57, y: 22 }));
-world.spawn(Third(true));
-world.spawn(Third(true), Position({ x: 81, y: 42 }));
-
-world.insert(e, Third(false));
-
-
-world.spawn(Velocity(1), Third(true), Position({ x: 81, y: 42 }));
-
-const cmd = Deno.run({
-  cmd: ["dot", "-Tpng", "-Kcirco", "-ograph-debug/graph.png"],
-  stdin: "piped",
-});
-
-const encoder = new TextEncoder();
-
-await cmd.stdin.write(encoder.encode(printArchetypeGraph(world)));
-cmd.stdin.close();
-await cmd.status();
-cmd.close();

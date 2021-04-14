@@ -1,4 +1,21 @@
-import { system, component, Entity, World } from "../shared/ecs.ts";
+import { system, component } from "../shared/ecs.ts";
+
+export const Sprite = component<{ handle: CanvasImageSource }>();
+export const Position = component<{ x: number; y: number }>();
+
+interface Resources {
+  renderer: Renderer;
+}
+
+export const RenderingSystem = system.query(Sprite, Position).fn<Resources>(function (world, sprites) {
+  world.resources.renderer.clear();
+
+  const ctx = world.resources.renderer.context;
+
+  for (const [sprite, position] of sprites) {
+    ctx.drawImage(sprite.handle, position.x, position.y);
+  }
+});
 
 export class Renderer {
   context: CanvasRenderingContext2D;
@@ -6,45 +23,16 @@ export class Renderer {
   constructor(private canvas: HTMLCanvasElement) {
     this.context = canvas.getContext("2d")!;
 
-    this.canvas.addEventListener("resize", (e) => console.log(e));
+    this.resizeToParent();
+    window.addEventListener("resize", this.resizeToParent.bind(this));
+  }
+
+  resizeToParent() {
+    this.canvas.width = this.canvas.parentElement!.clientWidth;
+    this.canvas.height = this.canvas.parentElement!.clientHeight;
   }
 
   clear() {
     this.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
   }
 }
-
-const Sprite = component<{ handle: number }>("Sprite");
-
-interface RenderResources {
-  renderer: Renderer;
-  time: { delta: number };
-}
-
-export const RenderingSystem = system
-  .query(Entity, Sprite)
-  .query(Sprite)
-  .fn(function (world: World<RenderResources>, sprites, parentTransforms) {
-    for (const [entity, sprite] of sprites) {
-    }
-
-    world.resources.renderer.clear();
-
-    const ctx = world.resources.renderer.context;
-
-    ctx.lineWidth = 10;
-
-    // Wall
-    ctx.strokeRect(75, 140, 150, 110);
-
-    // Door
-    ctx.fillRect(130, 190, 40, 60);
-
-    // Roof
-    ctx.beginPath();
-    ctx.moveTo(50, 140);
-    ctx.lineTo(150, 60);
-    ctx.lineTo(250, 140);
-    ctx.closePath();
-    ctx.stroke();
-  });

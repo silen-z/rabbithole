@@ -5,7 +5,6 @@ const Position = component<{ x: number; y: number }>("Position");
 const Velocity = component<number>("Velocity");
 const Third = component<boolean>("Third");
 
-
 Deno.test("can't register component twice", () => {
   const w = new World();
 
