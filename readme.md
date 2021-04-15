@@ -1,30 +1,29 @@
-Experimental browser game written in TypeScript using XState, ECSY, pixi.js and sharing code between client and server
+Experimental browser game written in TypeScript for Deno using XState and custom ECS, sharing code between client and server
 
 ## Client
 
-Client is using npm for managing dependencies and esbuild for bundling
+before runnning the server, bundle `client/client.ts` for browser with:
 
 ```sh
-# install dependencies
-npm install
+# short version
+deno run -A ./scripts.ts bundle
 
-# start dev watch mode
-npm run watch
+# watch mode
+deno run -A ./scripts.ts bundle --watch
 
-# or build for production
-npm run dist
+# full command (also can be passed --watch after the script name)
+deno run --allow-env --allow-read --allow-write --allow-run ./scripts/bundle-client.ts
 ```
 
 ## Server
 
-Server requires deno to run
-
-**to run the server**
-
 ```sh
-# anywhere in project
-npm run server
+# short version
+deno run -A ./scripts.ts server
 
-# or the full command in project root
-deno run --import-map=./server/imports.json --allow-env --allow-net --allow-read --location http://localhost ./server/webserver.ts
+# watch mode
+deno run -A ./scripts.ts server --watch
+
+# full command (also can be passed --watch before the script name)
+deno run --import-map=./imports.json --allow-env --allow-net --allow-read ./server/webserver.ts
 ```

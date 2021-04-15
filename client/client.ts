@@ -9,11 +9,11 @@ import { Assets } from "./assets.ts";
 import { JoinScreen } from "./join-screen.ts";
 
 class Client {
+  tickScheduler = new TickScheduler();
+
   world = new World()
     .addResources({ delta: 0, renderer: this.renderer, assets: new Assets("/sprites/") })
     .registerSystem(RenderingSystem);
-
-  tickScheduler = new TickScheduler();
 
   service = interpret(ClientStateMachine(this.world as World<unknown>, Connection("ws://localhost:8000/game")), {
     clock: this.tickScheduler,

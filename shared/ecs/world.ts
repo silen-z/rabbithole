@@ -219,12 +219,13 @@ interface Edge {
 }
 
 export class Archetype {
-  id = Archetype.createId(this.type);
+  id: symbol;
   entities: Entity[] = [];
   edges: Map<ComponentId, Edge> = new Map();
   components: Map<ComponentId, unknown[]> = new Map();
 
   constructor(public type: Set<ComponentId>, registeredComponents: Iterable<ComponentId>) {
+    this.id = Archetype.createId(this.type);
     // init component storages
     for (const c of type) {
       this.components.set(c, []);
