@@ -1,11 +1,11 @@
-import * as esbuild from "https://deno.land/x/esbuild/mod.js";
-import { cache } from "https://deno.land/x/esbuild_plugin_cache/mod.ts";
+import * as esbuild from "https://deno.land/x/esbuild@v0.11.14/mod.js";
+import { cache } from "https://deno.land/x/esbuild_plugin_cache@v0.2.5/mod.ts";
 
 export async function bundleClient(...args: string[]) {
   // temporary fix for Windows
-  if (Deno.build.os === "windows") {
-    Deno.env.set("FOLDERID_LocalAppData", Deno.env.get("LOCALAPPDATA")!);
-  }
+  // if (Deno.build.os === "windows") {
+  //   Deno.env.set("FOLDERID_LocalAppData", Deno.env.get("LOCALAPPDATA")!);
+  // }
 
   let watcher = null;
 
@@ -28,7 +28,7 @@ export async function bundleClient(...args: string[]) {
     bundle: true,
     format: "esm",
     watch: watcher,
-    plugins: [cache({ importmap, directory: "./cache" })],
+    plugins: [cache({ importmap, directory: "./.cache" })],
     outfile: "public/dist/client.js",
   });
 

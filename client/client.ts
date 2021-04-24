@@ -1,25 +1,29 @@
 import { Machine, interpret, assign, State, send, SpawnedActorRef } from "xstate";
 import { TickScheduler } from "../shared/tickscheduler.ts";
 import { Connection, ConnectionEvent } from "./connection.ts";
-import { World } from "../shared/ecs.ts";
-import { Renderer, RenderingSystem } from "./renderer.ts";
+import { World, Diagnostics } from "../shared/ecs.ts";
+import { Renderer, RenderingSystem, RenderTerrain } from "./renderer.ts";
 import { Ui } from "./ui.tsx";
 import { Identify } from "../shared/packets.ts";
 import { Assets } from "./assets.ts";
 import { JoinScreen } from "./join-screen.ts";
+import { wasmFolder } from "@hpcc-js/wasm";
 
 class Client {
   tickScheduler = new TickScheduler();
 
-  world = new World()
-    .addResources({ delta: 0, renderer: this.renderer, assets: new Assets("/sprites/") })
-    .registerSystem(RenderingSystem);
+  world: World = new World();
 
-  service = interpret(ClientStateMachine(this.world as World<unknown>, Connection("ws://localhost:8000/game")), {
+  service = interpret(ClientStateMachine(this.world, Connection("ws://localhost:8000/game")), {
     clock: this.tickScheduler,
   });
 
   constructor(private renderer: Renderer, private ui: Ui) {
+    this.world = this.world
+      .addResources({ delta: 0, renderer: this.renderer, assets: new Assets("/sprites/") })
+      .registerSystem(RenderingSystem)
+      .registerSystem(RenderTerrain);
+
     this.service.onTransition((state) => {
       this.ui.update(state, this.service.send);
     });
@@ -47,10 +51,11 @@ class Client {
 }
 
 interface ClientStateContext {
-  world: World<unknown>;
+  world: World;
   identityRejectReason?: string;
   socketQueue?: ClientEvent[];
   connRef?: SpawnedActorRef<ConnectionEvent>;
+  diagnostics?: Diagnostics;
 }
 
 export type ClientEvent =
@@ -59,17 +64,27 @@ export type ClientEvent =
   | { type: "IDENTITY_CONFIRM" }
   | { type: "IDENTITY_REJECT"; reason: string }
   | { type: "SOCKET_READY" }
-  | { type: "OPEN_CONNECTION" };
+  | { type: "OPEN_CONNECTION" }
+  | { type: "UPDATE_DIAGNOSTICS" };
 
-const ClientStateMachine = (world: World<unknown>, connection: Connection) =>
+const ClientStateMachine = (world: World, connection: Connection) =>
   Machine<ClientStateContext, ClientEvent>({
     strict: true,
     initial: "unidentified",
-    context: { world },
-    invoke: {
-      id: "connection",
-      src: connection,
-    },
+    context: { world, diagnostics: undefined },
+    invoke: [
+      {
+        id: "connection",
+        src: connection,
+      },
+      {
+        id: "diagnostics",
+        src: () => (send) => {
+          const timer = setInterval(() => send("UPDATE_DIAGNOSTICS"), 1000);
+          return () => clearInterval(timer);
+        },
+      },
+    ],
     states: {
       unidentified: {
         invoke: {
@@ -127,12 +142,21 @@ const ClientStateMachine = (world: World<unknown>, connection: Connection) =>
       },
       idle: {},
     },
+    on: {
+      UPDATE_DIAGNOSTICS: {
+        actions: assign({
+          diagnostics: (ctx) => ctx.world.diagnostics(),
+        }),
+      },
+    },
   });
 
 export type ClientState = State<ClientStateContext, ClientEvent>;
 
+wasmFolder("./wasm");
+
 const renderer = new Renderer(window.document.getElementsByTagName("canvas")[0]!);
 const ui = new Ui(window.document.getElementById("ui")!);
-const client = new Client(renderer, ui);
 
+const client = new Client(renderer, ui);
 client.start();

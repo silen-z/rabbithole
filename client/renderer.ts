@@ -1,21 +1,39 @@
 import { system, component } from "../shared/ecs.ts";
+import { QuadTree } from "../shared/quad-tree.ts";
 
-export const Sprite = component<{ handle: CanvasImageSource }>();
-export const Position = component<{ x: number; y: number }>();
+export const Sprite = component<{ handle: CanvasImageSource }>("Sprite");
+export const Position = component<{ x: number; y: number }>("Position");
+export const Terrain = component<QuadTree<boolean>>("Terrain");
 
-interface Resources {
+interface RenderResources {
   renderer: Renderer;
 }
 
-export const RenderingSystem = system.query(Sprite, Position).fn<Resources>(function (world, sprites) {
-  world.resources.renderer.clear();
+export const RenderingSystem = system<RenderResources>()
+  .query(Sprite, Position)
+  .fn(function (world, sprites) {
+    world.resources.renderer.clear();
 
-  const ctx = world.resources.renderer.context;
+    const ctx = world.resources.renderer.context;
 
-  for (const [sprite, position] of sprites) {
-    ctx.drawImage(sprite.handle, position.x, position.y);
-  }
-});
+    for (const [sprite, position] of sprites) {
+      ctx.drawImage(sprite.handle, position.x, position.y);
+    }
+  });
+
+export const RenderTerrain = system<RenderResources>()
+  .query(Terrain)
+  .fn((world, terrain) => {
+    const ctx = world.resources.renderer.context;
+
+    for (const qt of terrain) {
+      qt.draw((r, visible) => {
+        if (visible) {
+          ctx.strokeRect(r.x, r.y, r.w, r.h);
+        }
+      });
+    }
+  });
 
 export class Renderer {
   context: CanvasRenderingContext2D;

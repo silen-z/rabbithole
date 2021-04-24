@@ -1,12 +1,13 @@
 {
   "imports": {
-    "ws": "https://deno.land/std@0.91.0/ws/mod.ts",
-    "uuid": "https://deno.land/std@0.91.0/uuid/mod.ts",
-    "oak": "https://deno.land/x/oak@v6.5.0/mod.ts",
-    "xstate": "https://cdn.skypack.dev/xstate@^v4.17.1?dts",
-    "@xstate/immer": "https://cdn.skypack.dev/@xstate/immer?dts",
-    "net-serializer": "https://cdn.skypack.dev/net-serializer?dts",
-    "react": "https://cdn.skypack.dev/react?dts",
-    "react-dom": "https://cdn.skypack.dev/react-dom?dts"
+    "ws": "https://deno.land/std@0.95.0/ws/mod.ts",
+    "uuid": "https://deno.land/std@0.95.0/uuid/mod.ts",
+    "oak": "https://deno.land/x/oak@v6.5.1/mod.ts",
+    "xstate": "https://cdn.skypack.dev/xstate@^v4.18.0?dts",
+    "@xstate/immer": "https://cdn.skypack.dev/@xstate/immer@0.2.0?dts",
+    "net-serializer": "https://cdn.skypack.dev/net-serializer@v4.3.2?dts",
+    "react": "https://cdn.skypack.dev/react@v17.0.1?dts",
+    "react-dom": "https://cdn.skypack.dev/react-dom@v17.0.1?dts",
+    "@hpcc-js/wasm": "https://cdn.skypack.dev/@hpcc-js/wasm@v1.5.1?dts"
   }
 }

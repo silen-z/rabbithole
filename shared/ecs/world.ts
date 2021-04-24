@@ -1,52 +1,108 @@
-import { swapRemove, findSingleDiff, Assign } from "../utils.ts";
+import { swapRemove, findSingleDiff } from "../utils.ts";
 import { System } from "./system.ts";
 import { ComponentId, ComponentToInsert, ComponentDefinition } from "./component.ts";
 import { Query } from "./query.ts";
+import { exportArchetypeGraph } from "./diagnostics.ts";
 
-declare const EntityTag: unique symbol;
-export type Entity = number & { [EntityTag]: true };
+export type Entity = number & { _opaque: "Entity" };
 
 interface EntityMeta {
   type: ArchetypeId;
   index: number;
 }
 
-export type ArchetypeId = symbol;
+export type ArchetypeId = symbol & { _opaque: "ArchetypeId" };
 
-export class World<R> {
+interface RuntimeSystem {
+  fn: (world: World, ...queries: Query<unknown>[]) => void;
+  queries: Query<unknown>[];
+  enabled: boolean;
+}
+
+/**
+ * ECS world that contains entities and their components
+ */
+export class World {
+  /**
+   * resources object given to systems to store data and communicate with services outside the ECS
+   * */
+  resources: Record<string, any>;
+
   private lastEntity = 0;
+
   private components: Set<ComponentId> = new Set();
-  private emptyArchetype = new Archetype(new Set(), this.components);
-  private systems: Map<symbol, System<R>> = new Map();
+
+  private rootArchetype = new Archetype(new Set(), this.components);
+
+  private systems: Map<symbol, RuntimeSystem> = new Map();
+
   private entities: Map<Entity, EntityMeta> = new Map();
-  private archetypes: Map<ArchetypeId, Archetype> = new Map().set(this.emptyArchetype.id, this.emptyArchetype);
 
-  private runOnceSystems: Set<System<R>> = new Set();
+  private archetypes: Map<ArchetypeId, Archetype> = new Map();
 
-  resources: R = Object.create(null);
-
-  registerSystem(system: System<R>) {
-    this.systems.set(system.id, system);
-    return this;
+  /**
+   * Creates empty ECS world
+   * @param resources initial resources, defaults to empty object
+   */
+  constructor(resources = {}) {
+    this.archetypes.set(this.rootArchetype.id, this.rootArchetype);
+    this.resources = resources;
   }
 
-  runOnce(system: System<R>) {
+  /**
+   * executes all enabled systems
+   */
+  execute(): void {
+    for (const system of this.systems.values()) {
+      if (system.enabled) {
+        system.fn(this, ...system.queries);
+      }
+    }
+  }
+
+  /**
+   * registers system for this world, does nothing if system is already registered
+   * @param system system to register
+   */
+  registerSystem(system: System): this {
+    // TODO decide what to do when registering same system twice
     if (this.systems.has(system.id)) {
-      throw new Error("this system is already registered");
+      return this;
     }
-    this.runOnceSystems.add(system);
+    this.systems.set(system.id, this.toRuntimeSystem(system));
     return this;
   }
 
-  enable(system: System<R>) {
-    const s = this.systems.get(system.id);
-    if (s == null) {
-      this.systems.set(system.id, system);
-    }
-    system.enabled = true;
+  /**
+   * runs system once, without registering it
+   * @param system system to run
+   */
+  runOnce(system: System): void {
+    const queries = system.queries.map((qd) => new Query(qd.filters, this.archetypes));
+    system.fn(this, ...queries);
   }
 
-  disable(system: System<R>) {
+  /**
+   * enables system, registering it if needed
+   * @param system system to enable
+   */
+  enable(system: System): void {
+    const s = this.systems.get(system.id);
+    if (s != null) {
+      s.enabled = true;
+    } else {
+      const runtime = this.toRuntimeSystem(system);
+      runtime.enabled = true;
+      this.systems.set(system.id, runtime);
+    }
+  }
+
+  /**
+   * disables system
+   * @param system system to disable
+   * @throws if systems is not registered in world
+   */
+  disable(system: System): void {
     const s = this.systems.get(system.id);
     if (s == null) {
       throw new Error("this system is not registered");
@@ -54,25 +110,10 @@ export class World<R> {
     s.enabled = false;
   }
 
-  execute() {
-    for (const system of this.runOnceSystems) {
-      const queries = system.queries.map((qd) => new Query(qd.filters, this.archetypes));
-      system.fn(this, ...queries);
-    }
-
-    for (const system of this.systems.values()) {
-      if (system.enabled) {
-        const queries = system.queries.map((qd) => new Query(qd.filters, this.archetypes));
-        system.fn(this, ...queries);
-      }
-    }
-    this.runOnceSystems.clear();
-  }
-
-  spawn(...components: ComponentToInsert<unknown>[]): Entity {
+  spawn(...components: ComponentToInsert[]): Entity {
     const entity = this.lastEntity++ as Entity;
 
-    const archetype = this.findArchetype(this.emptyArchetype, components);
+    const archetype = this.findArchetype(this.rootArchetype, components);
 
     const index = archetype.entities.push(entity) - 1;
     for (const { id, data } of components) {
@@ -84,7 +125,7 @@ export class World<R> {
     return entity;
   }
 
-  despawn(entity: Entity) {
+  despawn(entity: Entity): void {
     const meta = this.entities.get(entity);
     if (meta == null) {
       throw new Error(`entity ${entity} doesn't exist`);
@@ -100,9 +141,11 @@ export class World<R> {
     if (moved != null) {
       this.entities.get(moved)!.index = meta.index;
     }
+
+    this.entities.delete(entity);
   }
 
-  insert(entity: Entity, ...components: { id: ComponentId; data: unknown }[]) {
+  insert(entity: Entity, ...components: { id: ComponentId; data: unknown }[]): void {
     const meta = this.entities.get(entity);
     if (meta == null) {
       throw new Error(`entity ${entity} doesn't exist`);
@@ -151,12 +194,12 @@ export class World<R> {
     return archetype.get(component.id, meta.index) as T | null;
   }
 
-  addResources<N>(resources: N): R extends unknown ? World<N> : World<Assign<R, N>> {
+  addResources(resources: Record<string, any>): this {
     Object.assign(this.resources, resources);
-    return (this as unknown) as R extends unknown ? World<N> : World<Assign<R, N>>;
+    return this;
   }
 
-  registerComponent<T>(definition: ComponentDefinition<T>) {
+  registerComponent<T>(definition: ComponentDefinition<T>): void {
     if (this.components.has(definition.id)) {
       throw Error(`component ${definition.id.description} is already registered`);
     }
@@ -164,7 +207,24 @@ export class World<R> {
     this.registerComponentId(definition.id);
   }
 
-  private findArchetype(start: Archetype, componentsToAdd: Iterable<ComponentToInsert<unknown>>): Archetype {
+  diagnostics(): Diagnostics {
+    return {
+      registeredComponents: this.components,
+      entityCount: this.entities.size,
+      archetypeCount: this.archetypes.size,
+      archetypeGraph: exportArchetypeGraph(this.rootArchetype, this.components),
+    };
+  }
+
+  private toRuntimeSystem(system: System): RuntimeSystem {
+    return {
+      fn: system.fn,
+      queries: system.queries.map((qd) => new Query(qd.filters, this.archetypes)),
+      enabled: system.startEnabled,
+    };
+  }
+
+  private findArchetype(start: Archetype, componentsToAdd: Iterable<ComponentToInsert>): Archetype {
     let newArchetype = start;
     for (const { id } of componentsToAdd) {
       if (start.type.has(id)) {
@@ -193,7 +253,7 @@ export class World<R> {
   private createArchetype(type: Set<ComponentId>): Archetype {
     const newArchetype = new Archetype(type, this.components);
 
-    for (const [id, archetype] of this.archetypes) {
+    for (const archetype of this.archetypes.values()) {
       const additionalComponent = findSingleDiff(type, archetype.type);
       if (additionalComponent != null) {
         archetype.edges.get(additionalComponent)!.add = newArchetype;
@@ -219,7 +279,7 @@ interface Edge {
 }
 
 export class Archetype {
-  id: symbol;
+  id: ArchetypeId;
   entities: Entity[] = [];
   edges: Map<ComponentId, Edge> = new Map();
   components: Map<ComponentId, unknown[]> = new Map();
@@ -254,14 +314,21 @@ export class Archetype {
     return this.components.get(component)![index];
   }
 
-  set(component: ComponentId, index: number, data: unknown) {
+  set(component: ComponentId, index: number, data: unknown): void {
     this.components.get(component)![index] = data;
   }
 
-  static createId(type: Set<ComponentId>) {
+  static createId(type: Set<ComponentId>): ArchetypeId {
     const description = Array.from(type)
       .map((id) => id.description)
       .join("|");
-    return Symbol(description);
+    return Symbol(description) as ArchetypeId;
   }
+}
+
+export interface Diagnostics {
+  readonly registeredComponents: Set<ComponentId>;
+  readonly entityCount: number;
+  readonly archetypeCount: number;
+  readonly archetypeGraph: string;
 }

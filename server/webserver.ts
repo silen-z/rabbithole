@@ -10,20 +10,12 @@ const config = fromEnv();
 const gameServer = new GameServer(config);
 
 const router = new Router();
-router.get("/game", async (ctx: Context<State>) => {
+router.get("/game", async (ctx: Context) => {
   const ws = await ctx.upgrade();
-  ctx.state.gameServer.handleConnection(ws);
+  gameServer.handleConnection(ws);
 });
 
-interface State {
-  gameServer: GameServer;
-}
-
-const app = new Application({
-  state: {
-    gameServer,
-  },
-});
+const app = new Application();
 
 app.use(errorHandler);
 app.use(logMiddleware);
@@ -42,4 +34,4 @@ app.addEventListener("listen", (event) => {
 });
 
 gameServer.start();
-await app.listen(config.webServer.listenAddress);
+await app.listen("localhost:8000");

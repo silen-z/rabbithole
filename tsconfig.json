@@ -2,7 +2,7 @@
   "compilerOptions": {
     "strict": true,
     "downlevelIteration": true,
-    "lib": ["DOM", "ES2015", "deno.ns"],
+    "lib": ["DOM", "ES2019", "deno.ns"],
 
     // linter checks
     "noFallthroughCasesInSwitch": true,

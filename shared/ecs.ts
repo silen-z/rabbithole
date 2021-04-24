@@ -1,4 +1,6 @@
 export { World } from "./ecs/world.ts";
-export type { Entity } from "./ecs/world.ts";
-export * from "./ecs/system.ts";
-export * from "./ecs/component.ts";
+export type { Diagnostics } from "./ecs/world.ts";
+export { system, SystemBuilder } from "./ecs/system.ts";
+export type { System } from "./ecs/system.ts";
+export { component } from "./ecs/component.ts";
+export { entity, has } from "./ecs/query.ts";

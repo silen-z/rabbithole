@@ -1,4 +1,4 @@
-import { assertEquals, assertThrows } from "https://deno.land/std@0.92.0/testing/asserts.ts";
+import { assertEquals, assertThrows } from "https://deno.land/std@0.95.0/testing/asserts.ts";
 import { swapRemove, findSingleDiff } from "./utils.ts";
 
 Deno.test("swapRemove", () => {

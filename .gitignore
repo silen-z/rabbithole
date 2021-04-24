@@ -1,4 +1,3 @@
 public/dist/
 .vscode
-graphs/*.png
-cache
+.cache

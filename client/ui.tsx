@@ -1,6 +1,8 @@
 import React from "react";
 import { render } from "react-dom";
 import type { ClientState, ClientEvent } from "./client.ts";
+import { ArchetypeGraph } from "./ui/archetype-graph.tsx";
+import { WindowPortal } from "./ui/window-portal.tsx";
 
 interface ClientStateContext {
   state: ClientState;
@@ -14,14 +16,15 @@ export class Ui {
   update(state: ClientState, dispatch: (event: ClientEvent) => void) {
     render(
       <ClientStateContext.Provider value={{ state, dispatch }}>
-        <UiComponent />
+        <Screen />
+        <DebugPanel />
       </ClientStateContext.Provider>,
       this.container
     );
   }
 }
 
-function UiComponent() {
+function Screen() {
   const { state } = React.useContext(ClientStateContext);
   if (state.matches("unidentified")) {
     return <LoginScreen />;
@@ -56,7 +59,7 @@ function LoginScreen() {
           <p>{rejectReson}</p>
         ) : (
           <p>
-            Want a playable game? Checkout out <a href="https://stockheimer.dontcodethis.com/">Stockheimer</a>
+            Want a playable game? Check out <a href="https://stockheimer.dontcodethis.com/">Stockheimer</a>
           </p>
         )}
         <label>
@@ -64,6 +67,43 @@ function LoginScreen() {
         </label>
         <input type="submit" value="Play" />
       </form>
+    </div>
+  );
+}
+
+function DebugPanel() {
+  const { state } = React.useContext(ClientStateContext);
+
+  const [isPanelOpen, setPanelOpen] = React.useState(false);
+  const [isGraphOpen, setGraphOpen] = React.useState(false);
+
+  if (!isPanelOpen) {
+    return <button className="debug-panel-open" onClick={() => setPanelOpen(true)}>debug</button>;
+  }
+
+  return (
+    <div className="debug-panel">
+      <button onClick={() => setPanelOpen(false)}>close debug panel</button>;
+      <table>
+        <tbody>
+          <tr>
+            <td>Entities:</td>
+            <td>{state.context.diagnostics?.entityCount}</td>
+          </tr>
+          <tr>
+            <td>Components:</td>
+            <td>{state.context.diagnostics?.registeredComponents.size}</td>
+          </tr>
+        </tbody>
+      </table>
+      <button disabled={isGraphOpen} onClick={() => setGraphOpen(true)}>
+        open archetype graph
+      </button>
+      {isGraphOpen && (
+        <WindowPortal onClose={() => setGraphOpen(false)}>
+          <ArchetypeGraph graph={state.context.diagnostics?.archetypeGraph} />
+        </WindowPortal>
+      )}
     </div>
   );
 }

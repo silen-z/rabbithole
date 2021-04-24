@@ -5,25 +5,17 @@ Experimental browser game written in TypeScript for Deno using XState and custom
 before runnning the server, bundle `client/client.ts` for browser with:
 
 ```sh
-# short version
-deno run -A ./scripts.ts bundle
+deno run -A ./scripts/bundle-client.ts
 
 # watch mode
-deno run -A ./scripts.ts bundle --watch
-
-# full command (also can be passed --watch after the script name)
-deno run --allow-env --allow-read --allow-write --allow-run ./scripts/bundle-client.ts
+deno run -A ./scripts/bundle-client.ts --watch
 ```
 
 ## Server
 
 ```sh
-# short version
-deno run -A ./scripts.ts server
+deno run -A --import-map=./imports.json ./server/webserver.ts
 
 # watch mode
-deno run -A ./scripts.ts server --watch
-
-# full command (also can be passed --watch before the script name)
-deno run --import-map=./imports.json --allow-env --allow-net --allow-read ./server/webserver.ts
+deno run -A --import-map=./imports.json --unstable --watch ./server/webserver.ts
 ```

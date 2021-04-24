@@ -61,13 +61,13 @@ interface Player {
   nickname?: string;
 }
 
-interface GameServerContext<R> {
-  world: World<R>;
+interface GameServerContext {
+  world: World;
   players: Record<string, Player>;
 }
 
-const GameServerMachine = <R>(world: World<R>) =>
-  Machine<GameServerContext<R>, GameServerEvent>({
+const GameServerMachine = <R>(world: World) =>
+  Machine<GameServerContext, GameServerEvent>({
     initial: "lobby",
     context: {
       world,
@@ -98,7 +98,7 @@ const GameServerMachine = <R>(world: World<R>) =>
       },
 
       PLAYER_IDENTIFY: {
-        actions: actions.choose<GameServerContext<R>, PlayerIdentifyEvent>([
+        actions: actions.choose<GameServerContext, PlayerIdentifyEvent>([
           {
             cond: (ctx, e) => Object.values(ctx.players).some((p) => p.nickname === e.nickname),
             actions: sendToPlayer({ type: "IDENTITY_REJECT", reason: "Nickname already exists" }),
@@ -125,6 +125,6 @@ interface PlayerRelatedEvent extends EventObject {
 
 function sendToPlayer<E extends PlayerRelatedEvent>(
   event: PlayerConnectionEvent
-): SendAction<GameServerContext<any>, E, PlayerConnectionEvent> {
+): SendAction<GameServerContext, E, PlayerConnectionEvent> {
   return send(event, { to: (_, e: E) => `player-${e.id}` });
 }

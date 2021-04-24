@@ -1,89 +1,35 @@
-import { assertEquals, assertThrows, assertArrayIncludes } from "https://deno.land/std@0.92.0/testing/asserts.ts";
-import { World, component, system, Entity } from "./ecs.ts";
+import { assertEquals } from "https://deno.land/std@0.95.0/testing/asserts.ts";
+import { World, component } from "./ecs.ts";
 
-const Position = component<{ x: number; y: number }>("Position");
-const Velocity = component<number>("Velocity");
-const Third = component<boolean>("Third");
-
-Deno.test("can't register component twice", () => {
+Deno.test("random access", () => {
   const w = new World();
 
-  w.registerComponent(Position);
+  const C1 = component<{ val: string }>();
+  const C2 = component<number>();
+  const C3 = component<boolean>();
 
-  assertThrows(() => {
-    w.registerComponent(Position);
-  });
+  const e1 = w.spawn(C1({ val: "abc" }), C2(123));
+  const e2 = w.spawn(C1({ val: "def" }), C2(456), C3(true));
+
+  assertEquals(w.get(e1, C1), { val: "abc" });
+  assertEquals(w.get(e1, C2), 123);
+  assertEquals(w.get(e2, C1), { val: "def" });
+  assertEquals(w.get(e2, C2), 456);
+
+  // mutation
+  const c = w.get(e1, C1)!;
+  c.val = "xyz";
+  assertEquals(w.get(e1, C1), { val: "xyz" });
 });
 
-Deno.test("insert and get component", () => {
-  const w = new World();
-  const e = w.spawn();
+// Deno.test("queries", () => {
+//   const w = new World();
 
-  const p1 = Position({ x: 1, y: 2 });
+//   const C1 = component<{ val: string }>();
+//   const C2 = component<number>();
+//   const C3 = component<boolean>();
 
-  w.insert(e, p1, Velocity(2));
+//   const e1 = w.spawn(C1({ val: "abc" }), C2(123));
+//   const e2 = w.spawn(C1({ val: "def" }), C2(456), C3(true));
 
-  assertEquals(p1.data, w.get(e, Position));
-});
-
-Deno.test("simple queries", () => {
-  const w = new World();
-
-  const e1 = w.spawn();
-  w.insert(e1, Velocity(1));
-
-  const e2 = w.spawn();
-  w.insert(e2, Position({ x: 1, y: 2 }), Velocity(2));
-
-  const vs = [];
-  for (const v of w.query(Velocity)) {
-    vs.push(v);
-  }
-
-  assertArrayIncludes(vs, [1, 2]);
-});
-
-Deno.test("systems", () => {
-  const world = new World();
-
-  world.spawn(Velocity(1));
-  world.spawn(Velocity(2));
-  world.spawn(Velocity(3), Position({ x: 81, y: 42 }));
-  world.spawn(Position({ x: 57, y: 22 }));
-  world.spawn(Third(true));
-  world.spawn(Third(true), Position({ x: 81, y: 42 }) );
-
-  const iterated: number[] = [];
-
-  const TestSystem = system.query(Velocity).fn((w, velocity) => {
-    for (const v of velocity) {
-      iterated.push(v);
-    }
-  });
-
-  world.registerSystem(TestSystem);
-
-  const iteratedEntities = [];
-
-  const TestEntitySystem = system.query(Entity).fn((w, entities) => {
-    for (const e of entities) {
-      iteratedEntities.push(e);
-    }
-  });
-
-  world.registerSystem(TestEntitySystem);
-
-  world.execute(1);
-
-  assertEquals(iterated, [1, 2, 3]);
-  assertEquals(iteratedEntities.length, 4);
-});
-
-// TODO implement proper tag components
-Deno.test("defining and creating empty component", () => {
-  const Tag = component();
-  const w = new World();
-  const e = w.spawn(Tag(53));
-
-  const c = w.get(e, Tag);
-});
+// });
