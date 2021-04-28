@@ -1,15 +1,16 @@
 import { Machine, interpret, spawn, send, actions, SendAction, EventObject, SpawnedActorRef } from "xstate";
 import { assign } from "@xstate/immer";
 import { WebSocket } from "ws";
-import { World } from "../shared/ecs.ts";
 import { v4 } from "uuid";
 
 import type { Configuration } from "./configuration.ts";
-import { TickScheduler } from "../shared/tickscheduler.ts";
+import { World } from "../shared/ecs.ts";
+import { Time } from "../shared/time.ts";
 import { PlayerConnection, PlayerConnectionEvent } from "./player-connection.ts";
+import { TickScheduler } from "../shared/tickscheduler.ts";
 
 export class GameServer {
-  world = new World().addResources({ delta: 0 });
+  world = new World().withResources(Time({ delta: 0 }));
 
   tickScheduler = new TickScheduler();
 
@@ -31,7 +32,7 @@ export class GameServer {
       const elapsed = now - previous;
       const delta = elapsed / 1000;
       this.tickScheduler.tick(elapsed);
-      this.world.resources.delta = delta;
+      this.world.res(Time).delta = delta;
       this.world.execute();
       previous = now;
     };

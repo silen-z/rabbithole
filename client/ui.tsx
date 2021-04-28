@@ -84,7 +84,7 @@ function DebugPanel() {
   return (
     <div className="debug-panel">
       <button onClick={() => setPanelOpen(false)}>close debug panel</button>;
-      <table>
+      <table className="debug-stats">
         <tbody>
           <tr>
             <td>Entities:</td>

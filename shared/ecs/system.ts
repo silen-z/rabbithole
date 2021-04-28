@@ -1,46 +1,61 @@
-import { World } from "./world.ts";
+import { World, ResourceDefinition } from "./world.ts";
 import { QueryFilter, QueryFromFilters } from "./query.ts";
 
-export interface System<R = any, P extends unknown[] = any> {
+export interface System<PS extends unknown[] = any> {
   id: symbol;
-  fn: (world: Context<R>, ...queries: P) => void;
-  queries: QueryDefinition[];
+  fn: (world: World, ...params: PS) => void;
+  params: SystemParam[];
   startEnabled: boolean;
 }
 
 interface QueryDefinition<CS extends QueryFilter[] = QueryFilter[]> {
+  type: "query";
   filters: CS;
 }
 
-interface Context<R> extends World {
-  resources: R;
-}
+export class SystemBuilder<PS extends SystemParam[] = []> {
+  private params: SystemParam[] = [];
 
-export class SystemBuilder<R, QS extends QueryDefinition[] = []> {
-  private queries: QueryDefinition[] = [];
+  res<R extends ResourceDefinition<any>[]>(...resources: R): SystemBuilder<[...PS, ...R]> {
+    this.params.push(...resources);
+    return this as any;
+  }
 
   query<F1 extends QueryFilter, FS extends QueryFilter[]>(
     filter: F1,
     ...filters: FS
-  ): SystemBuilder<R, [...QS, QueryDefinition<[F1, ...FS]>]> {
-    this.queries.push({ filters: [filter, ...filters] });
+  ): SystemBuilder<[...PS, QueryDefinition<[F1, ...FS]>]> {
+    this.params.push({ type: "query", filters: [filter, ...filters] });
     return this as any;
   }
 
-  fn(systemFn: (world: Context<R>, ...queries: ToSystemParams<QS>) => void): System<R, ToSystemParams<QS>> {
+  fn(systemFn: (this: World, world: World, ...params: ToSystemParams<PS>) => void): System<ToSystemParams<PS>> {
     return {
       id: Symbol(),
       fn: systemFn,
-      queries: this.queries,
+      params: this.params,
       startEnabled: true,
     };
   }
 }
 
-export function system<R>(): SystemBuilder<R> {
+export function system(): SystemBuilder {
   return new SystemBuilder();
 }
 
-type ToSystemParams<QS extends QueryDefinition[]> = {
-  [Q in keyof QS]: QS[Q] extends QueryDefinition<infer QF> ? QueryFromFilters<QF> : unknown;
+export type SystemParam = QueryDefinition | ResourceDefinition<any>;
+
+type ToSystemParams<QS extends SystemParam[]> = {
+  [Q in keyof QS]: QS[Q] extends QueryDefinition<infer QF>
+    ? QueryFromFilters<QF>
+    : QS[Q] extends ResourceDefinition<infer R>
+    ? R
+    : never;
 };
+
+// type Command = {type: "insert", entity: Entity, components: Components }
+
+// class Commands {
+//   private queue = []
+
+// }

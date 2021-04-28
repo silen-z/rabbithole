@@ -5,6 +5,8 @@ export interface ComponentToInsert {
   data: unknown;
 }
 
+let unnamedCounter = 0;
+
 /**
  * Defines a component type, its advised to specify type to get autocompletion
  * in queries and when constructing the component
@@ -12,7 +14,7 @@ export interface ComponentToInsert {
  * ```typescript
  * const Position = component<{x: number, y: number}>();
  * ```
- * 
+ *
  * Later the component can be constructed like this:
  * ```typescript
  * world.insert(entity, Position({x: 15, y: 42}));
@@ -21,10 +23,10 @@ export interface ComponentToInsert {
  * @param name name of the component for debugging purposes
  */
 export function component<T>(name?: string): ComponentDefinition<T> {
-  const id = Symbol(name || "<unnamed>") as ComponentId;
+  const id = Symbol(name || `<component-${String(unnamedCounter++).padStart(2, "0")}>`) as ComponentId;
   const creator = (data: T) => ({ id, data });
 
-  return Object.assign(creator, { id, queryType: "component" as const });
+  return Object.assign(creator, { id, filter: "component" as const });
 }
 
 /**
@@ -35,6 +37,6 @@ export function component<T>(name?: string): ComponentDefinition<T> {
  */
 export type ComponentDefinition<T> = {
   id: ComponentId;
-  queryType: "component";
+  filter: "component";
   (data: T): ComponentToInsert;
 };

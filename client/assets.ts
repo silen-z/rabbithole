@@ -1,4 +1,6 @@
-export class Assets {
+import { resource } from "../shared/ecs.ts";
+
+export class AssetLoader {
   private loadedAssets: Map<string, CanvasImageSource> = new Map();
 
   constructor(private basePath: string) {}
@@ -18,3 +20,5 @@ export class Assets {
     return this.loadedAssets.get(path);
   }
 }
+
+export const Assets = resource<AssetLoader>();

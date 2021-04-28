@@ -33,6 +33,10 @@ canvas {
   border-left: 1px solid #ccc;
 }
 
+.debug-stats {
+  margin: 8px 0;
+}
+
 .login-screen {
   display: flex;
   height: 100%;

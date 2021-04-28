@@ -1,28 +1,26 @@
+import { wasmFolder } from "@hpcc-js/wasm";
 import { Machine, interpret, assign, State, send, SpawnedActorRef } from "xstate";
 import { TickScheduler } from "../shared/tickscheduler.ts";
 import { Connection, ConnectionEvent } from "./connection.ts";
 import { World, Diagnostics } from "../shared/ecs.ts";
-import { Renderer, RenderingSystem, RenderTerrain } from "./renderer.ts";
+import { CanvasRenderer, Renderer, RenderingSystem, RenderTerrain } from "./renderer.ts";
 import { Ui } from "./ui.tsx";
 import { Identify } from "../shared/packets.ts";
-import { Assets } from "./assets.ts";
+import { Assets, AssetLoader } from "./assets.ts";
 import { JoinScreen } from "./join-screen.ts";
-import { wasmFolder } from "@hpcc-js/wasm";
+import { Time } from "../shared/time.ts";
 
 class Client {
   tickScheduler = new TickScheduler();
 
-  world: World = new World();
+  world: World = new World().withSystem(RenderingSystem).withSystem(RenderTerrain);
 
-  service = interpret(ClientStateMachine(this.world, Connection("ws://localhost:8000/game")), {
+  service = interpret(ClientStateMachine(this.world, Connection(`ws://${window.location.host}/game`)), {
     clock: this.tickScheduler,
   });
 
-  constructor(private renderer: Renderer, private ui: Ui) {
-    this.world = this.world
-      .addResources({ delta: 0, renderer: this.renderer, assets: new Assets("/sprites/") })
-      .registerSystem(RenderingSystem)
-      .registerSystem(RenderTerrain);
+  constructor(private renderer: CanvasRenderer, private ui: Ui) {
+    this.world.withResources(Time({ delta: 0 }), Assets(new AssetLoader("/sprites/")), Renderer(this.renderer));
 
     this.service.onTransition((state) => {
       this.ui.update(state, this.service.send);
@@ -39,7 +37,7 @@ class Client {
       const delta = elapsed / 1000;
 
       this.tickScheduler.tick(elapsed);
-      this.world.resources.delta = delta;
+      this.world.res(Time).delta = delta;
       this.world.execute();
 
       lastFrame = timestamp;
@@ -155,7 +153,7 @@ export type ClientState = State<ClientStateContext, ClientEvent>;
 
 wasmFolder("./wasm");
 
-const renderer = new Renderer(window.document.getElementsByTagName("canvas")[0]!);
+const renderer = new CanvasRenderer(window.document.getElementsByTagName("canvas")[0]!);
 const ui = new Ui(window.document.getElementById("ui")!);
 
 const client = new Client(renderer, ui);

@@ -1,21 +1,28 @@
-import { swapRemove, findSingleDiff } from "../utils.ts";
-import { System } from "./system.ts";
 import { ComponentId, ComponentToInsert, ComponentDefinition } from "./component.ts";
+import { System, SystemParam } from "./system.ts";
 import { Query } from "./query.ts";
 import { exportArchetypeGraph } from "./diagnostics.ts";
+import { swapRemove, findSingleDiff } from "../utils.ts";
 
-export type Entity = number & { _opaque: "Entity" };
+export type Entity = number;
 
 interface EntityMeta {
   type: ArchetypeId;
   index: number;
 }
 
-export type ArchetypeId = symbol & { _opaque: "ArchetypeId" };
+export type ArchetypeId = symbol;
+
+interface CachedQuery {
+  type: "cachedQuery";
+  query: Query;
+}
+
+type RuntimeSystemParams = SystemParam | CachedQuery;
 
 interface RuntimeSystem {
-  fn: (world: World, ...queries: Query<unknown>[]) => void;
-  queries: Query<unknown>[];
+  fn: (world: World, ...queries: unknown[]) => void;
+  params: RuntimeSystemParams[];
   enabled: boolean;
 }
 
@@ -26,7 +33,7 @@ export class World {
   /**
    * resources object given to systems to store data and communicate with services outside the ECS
    * */
-  resources: Record<string, any>;
+  private resources: Map<symbol, unknown> = new Map();
 
   private lastEntity = 0;
 
@@ -40,13 +47,13 @@ export class World {
 
   private archetypes: Map<ArchetypeId, Archetype> = new Map();
 
+  private queriesNeedRefresh = false;
+
   /**
    * Creates empty ECS world
-   * @param resources initial resources, defaults to empty object
    */
-  constructor(resources = {}) {
+  constructor() {
     this.archetypes.set(this.rootArchetype.id, this.rootArchetype);
-    this.resources = resources;
   }
 
   /**
@@ -55,21 +62,22 @@ export class World {
   execute(): void {
     for (const system of this.systems.values()) {
       if (system.enabled) {
-        system.fn(this, ...system.queries);
+        system.fn(this, ...this.resolveSystemParams(system.params, true, this.queriesNeedRefresh));
       }
     }
+    this.queriesNeedRefresh = false;
   }
 
   /**
    * registers system for this world, does nothing if system is already registered
    * @param system system to register
    */
-  registerSystem(system: System): this {
+  withSystem(system: System): this {
     // TODO decide what to do when registering same system twice
     if (this.systems.has(system.id)) {
       return this;
     }
-    this.systems.set(system.id, this.toRuntimeSystem(system));
+    this.registerSystem(system);
     return this;
   }
 
@@ -78,8 +86,7 @@ export class World {
    * @param system system to run
    */
   runOnce(system: System): void {
-    const queries = system.queries.map((qd) => new Query(qd.filters, this.archetypes));
-    system.fn(this, ...queries);
+    system.fn(this, ...this.resolveSystemParams(system.params));
   }
 
   /**
@@ -87,14 +94,8 @@ export class World {
    * @param system system to enable
    */
   enable(system: System): void {
-    const s = this.systems.get(system.id);
-    if (s != null) {
-      s.enabled = true;
-    } else {
-      const runtime = this.toRuntimeSystem(system);
-      runtime.enabled = true;
-      this.systems.set(system.id, runtime);
-    }
+    const s = this.systems.get(system.id) || this.registerSystem(system);
+    s.enabled;
   }
 
   /**
@@ -108,6 +109,16 @@ export class World {
       throw new Error("this system is not registered");
     }
     s.enabled = false;
+  }
+
+  private registerSystem(system: System): RuntimeSystem {
+    const runtimeSystem = {
+      fn: system.fn,
+      params: system.params,
+      enabled: system.startEnabled,
+    };
+    this.systems.set(system.id, runtimeSystem);
+    return runtimeSystem;
   }
 
   spawn(...components: ComponentToInsert[]): Entity {
@@ -194,12 +205,22 @@ export class World {
     return archetype.get(component.id, meta.index) as T | null;
   }
 
-  addResources(resources: Record<string, any>): this {
-    Object.assign(this.resources, resources);
+  withResources(...resources: { id: symbol; res: any }[]): this {
+    for (const { id, res } of resources) {
+      this.resources.set(id, res);
+    }
     return this;
   }
 
-  registerComponent<T>(definition: ComponentDefinition<T>): void {
+  res<T>(resource: ResourceDefinition<T>): T {
+    const res = this.resources.get(resource.id);
+    if (res == null) {
+      throw new Error(`resource ${resource.id.description} is not registered in this world`);
+    }
+    return res as T;
+  }
+
+  withComponent<T>(definition: ComponentDefinition<T>): void {
     if (this.components.has(definition.id)) {
       throw Error(`component ${definition.id.description} is already registered`);
     }
@@ -207,27 +228,36 @@ export class World {
     this.registerComponentId(definition.id);
   }
 
-  diagnostics(): Diagnostics {
-    return {
-      registeredComponents: this.components,
-      entityCount: this.entities.size,
-      archetypeCount: this.archetypes.size,
-      archetypeGraph: exportArchetypeGraph(this.rootArchetype, this.components),
-    };
+  private *resolveSystemParams(params: RuntimeSystemParams[], cacheQueries = false, refreshQueries = false) {
+    let i = 0;
+    for (const p of params) {
+      switch (p.type) {
+        case "cachedQuery":
+          if (refreshQueries) {
+            p.query.resolveArchetypes(this.archetypes.values());
+          }
+          yield p.query;
+          break;
+        case "query": {
+          const query = new Query(p.filters, this.archetypes.values());
+          if (cacheQueries) {
+            params[i] = { type: "cachedQuery", query };
+          }
+          yield query;
+
+          break;
+        }
+        case "resource":
+          yield this.res(p);
+      }
+      ++i;
+    }
   }
 
-  private toRuntimeSystem(system: System): RuntimeSystem {
-    return {
-      fn: system.fn,
-      queries: system.queries.map((qd) => new Query(qd.filters, this.archetypes)),
-      enabled: system.startEnabled,
-    };
-  }
-
-  private findArchetype(start: Archetype, componentsToAdd: Iterable<ComponentToInsert>): Archetype {
-    let newArchetype = start;
+  private findArchetype(formerArchetype: Archetype, componentsToAdd: Iterable<ComponentToInsert>): Archetype {
+    let newArchetype = formerArchetype;
     for (const { id } of componentsToAdd) {
-      if (start.type.has(id)) {
+      if (formerArchetype.type.has(id)) {
         continue;
       }
 
@@ -236,7 +266,7 @@ export class World {
       }
       const edge = newArchetype.edges.get(id)!;
 
-      newArchetype = edge.add != null ? edge.add : this.createArchetype(new Set(newArchetype.type).add(id));
+      newArchetype = edge.add || this.createArchetype(new Set(newArchetype.type).add(id));
     }
 
     return newArchetype;
@@ -268,8 +298,18 @@ export class World {
     }
 
     this.archetypes.set(newArchetype.id, newArchetype);
+    this.queriesNeedRefresh = true;
 
     return newArchetype;
+  }
+
+  diagnostics(): Diagnostics {
+    return {
+      registeredComponents: this.components,
+      entityCount: this.entities.size,
+      archetypeCount: this.archetypes.size,
+      archetypeGraph: exportArchetypeGraph(this.rootArchetype, this.components),
+    };
   }
 }
 
@@ -324,6 +364,25 @@ export class Archetype {
       .join("|");
     return Symbol(description) as ArchetypeId;
   }
+}
+
+export type ResourceDefinition<R> = {
+  id: symbol;
+  type: "resource";
+  (res: R): { id: symbol; res: R };
+};
+
+const getResourceName = (() => {
+  let unnamedResources = 0;
+  return () => `<resource-${String(unnamedResources++).padStart(2, "0")}>`;
+})();
+
+export function resource<T>(name?: string): ResourceDefinition<T> {
+  const id = Symbol(name || getResourceName());
+
+  const creator = (res: T) => ({ id, res });
+
+  return Object.assign(creator, { id, type: "resource" as const });
 }
 
 export interface Diagnostics {
