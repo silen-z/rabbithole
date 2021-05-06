@@ -3,7 +3,7 @@ import { Machine, interpret, assign, State, send, SpawnedActorRef } from "xstate
 import { TickScheduler } from "../shared/tickscheduler.ts";
 import { Connection, ConnectionEvent } from "./connection.ts";
 import { World, Diagnostics } from "../shared/ecs.ts";
-import { CanvasRenderer, Renderer, RenderingSystem, RenderTerrain } from "./renderer.ts";
+import { WebGLRenderer, Renderer, RenderingSystem, RenderTerrain } from "./renderer.ts";
 import { Ui } from "./ui.tsx";
 import { Identify } from "../shared/packets.ts";
 import { Assets, AssetLoader } from "./assets.ts";
@@ -13,13 +13,13 @@ import { Time } from "../shared/time.ts";
 class Client {
   tickScheduler = new TickScheduler();
 
-  world: World = new World().withSystem(RenderingSystem).withSystem(RenderTerrain);
+  world: World = new World().withSystem(RenderTerrain).withSystem(RenderingSystem);
 
   service = interpret(ClientStateMachine(this.world, Connection(`ws://${window.location.host}/game`)), {
     clock: this.tickScheduler,
   });
 
-  constructor(private renderer: CanvasRenderer, private ui: Ui) {
+  constructor(private renderer: WebGLRenderer, private ui: Ui) {
     this.world.withResources(Time({ delta: 0 }), Assets(new AssetLoader("/sprites/")), Renderer(this.renderer));
 
     this.service.onTransition((state) => {
@@ -85,9 +85,13 @@ const ClientStateMachine = (world: World, connection: Connection) =>
     ],
     states: {
       unidentified: {
+        // @ts-ignore wrong xstate typings
         invoke: {
           id: "join-systems",
           src: JoinScreen,
+          onError: (ctx: ClientStateContext, error: any) => {
+            console.error(error);
+          },
           data: {
             world: (ctx: ClientStateContext) => ctx.world,
           },
@@ -153,7 +157,7 @@ export type ClientState = State<ClientStateContext, ClientEvent>;
 
 wasmFolder("./wasm");
 
-const renderer = new CanvasRenderer(window.document.getElementsByTagName("canvas")[0]!);
+const renderer = new WebGLRenderer(window.document.getElementsByTagName("canvas")[0]!);
 const ui = new Ui(window.document.getElementById("ui")!);
 
 const client = new Client(renderer, ui);

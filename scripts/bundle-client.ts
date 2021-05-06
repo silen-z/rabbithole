@@ -24,6 +24,7 @@ export async function bundleClient(...args: string[]) {
     watch: isWatchMode && { onRebuild },
     plugins: [cache({ importmap, directory: "./.cache" })],
     outfile: "public/dist/client.js",
+    loader: { ".vert": "text", ".frag": "text" },
   });
 
   onRebuild(undefined, result);

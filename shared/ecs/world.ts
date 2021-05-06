@@ -1,4 +1,4 @@
-import { ComponentId, ComponentToInsert, ComponentDefinition } from "./component.ts";
+import { ComponentId, Insertion, Insertions, ComponentDefinition } from "./component.ts";
 import { System, SystemParam } from "./system.ts";
 import { Query } from "./query.ts";
 import { exportArchetypeGraph } from "./diagnostics.ts";
@@ -121,14 +121,15 @@ export class World {
     return runtimeSystem;
   }
 
-  spawn(...components: ComponentToInsert[]): Entity {
+  spawn(...components: Insertion[]): Entity {
     const entity = this.lastEntity++ as Entity;
 
     const archetype = this.findArchetype(this.rootArchetype, components);
 
     const index = archetype.entities.push(entity) - 1;
-    for (const { id, data } of components) {
-      archetype.set(id, index, data);
+    for (const c of components) {
+      archetype.set(c.id, index, c.data);
+      Insertions.recycle(c);
     }
 
     this.entities.set(entity, { type: archetype.id, index });
@@ -156,7 +157,7 @@ export class World {
     this.entities.delete(entity);
   }
 
-  insert(entity: Entity, ...components: { id: ComponentId; data: unknown }[]): void {
+  insert(entity: Entity, ...components: Insertion[]): void {
     const meta = this.entities.get(entity);
     if (meta == null) {
       throw new Error(`entity ${entity} doesn't exist`);
@@ -165,8 +166,8 @@ export class World {
 
     // if current archetype has all inserted component just replace them
     if (components.every(({ id }) => oldArchetype.type.has(id))) {
-      for (const { id, data } of components) {
-        oldArchetype.set(id, meta.index, data);
+      for (const c of components) {
+        oldArchetype.set(c.id, meta.index, c.data);
       }
       return;
     }
@@ -183,8 +184,9 @@ export class World {
     }
 
     // insert the data
-    for (const { id, data } of components) {
-      newArchetype.set(id, newIndex, data);
+    for (const c of components) {
+      newArchetype.set(c.id, newIndex, c.data);
+      Insertions.recycle(c);
     }
 
     meta.type = newArchetype.id;
@@ -254,7 +256,7 @@ export class World {
     }
   }
 
-  private findArchetype(formerArchetype: Archetype, componentsToAdd: Iterable<ComponentToInsert>): Archetype {
+  private findArchetype(formerArchetype: Archetype, componentsToAdd: Iterable<Insertion>): Archetype {
     let newArchetype = formerArchetype;
     for (const { id } of componentsToAdd) {
       if (formerArchetype.type.has(id)) {
@@ -372,11 +374,6 @@ export type ResourceDefinition<R> = {
   (res: R): { id: symbol; res: R };
 };
 
-const getResourceName = (() => {
-  let unnamedResources = 0;
-  return () => `<resource-${String(unnamedResources++).padStart(2, "0")}>`;
-})();
-
 export function resource<T>(name?: string): ResourceDefinition<T> {
   const id = Symbol(name || getResourceName());
 
@@ -384,6 +381,11 @@ export function resource<T>(name?: string): ResourceDefinition<T> {
 
   return Object.assign(creator, { id, type: "resource" as const });
 }
+
+const getResourceName = (() => {
+  let count = 0;
+  return () => `<resource-${String(count++).padStart(2, "0")}>`;
+})();
 
 export interface Diagnostics {
   readonly registeredComponents: Set<ComponentId>;

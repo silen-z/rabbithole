@@ -1,11 +1,11 @@
+import { ObjectPool } from "../object-pool.ts";
+
 export type ComponentId = symbol;
 
-export interface ComponentToInsert {
-  id: ComponentId;
-  data: unknown;
+interface ComponentOptions<T> {
+  name?: string;
+  pool?: ObjectPool<T, any[]>;
 }
-
-let unnamedCounter = 0;
 
 /**
  * Defines a component type, its advised to specify type to get autocompletion
@@ -22,10 +22,18 @@ let unnamedCounter = 0;
  * @typeParam T type of component data
  * @param name name of the component for debugging purposes
  */
-export function component<T>(name?: string): ComponentDefinition<T> {
-  const id = Symbol(name || `<component-${String(unnamedCounter++).padStart(2, "0")}>`) as ComponentId;
-  const creator = (data: T) => ({ id, data });
+export function component<T>(
+  options: ComponentOptions<T> = {}
+): typeof options extends { pool: ObjectPool<T, infer A> } ? PooledComponentDefinition<T, A> : ComponentDefinition<T> {
+  const id = Symbol(options.name || generateComponentName()) as ComponentId;
 
+  if (options.pool != null) {
+    const pool = options.pool;
+    const creator = (...args: any[]) => Insertions.get(id, pool.get(...args), true);
+    return Object.assign(creator, { id, filter: "component" as const });
+  }
+
+  const creator = (data: T) => Insertions.get(id, data, false);
   return Object.assign(creator, { id, filter: "component" as const });
 }
 
@@ -38,5 +46,29 @@ export function component<T>(name?: string): ComponentDefinition<T> {
 export type ComponentDefinition<T> = {
   id: ComponentId;
   filter: "component";
-  (data: T): ComponentToInsert;
+  (data: T): Insertion;
 };
+
+export type PooledComponentDefinition<T, A extends any[]> = ComponentDefinition<T> & {
+  (...args: A): Insertion;
+};
+
+export type Insertion = {
+  id: ComponentId;
+  data: unknown;
+  pooled: boolean;
+};
+
+export const Insertions = new ObjectPool(
+  () => ({ id: undefined, data: undefined, pooled: undefined }),
+  (i: Insertion, id, data, pooled) => {
+    i.id = id;
+    i.data = data;
+    id.pooled = pooled;
+  }
+);
+
+const generateComponentName = (() => {
+  let count = 0;
+  return () => `<component-${String(count++).padStart(2, "0")}>`;
+})();

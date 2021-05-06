@@ -1,15 +1,23 @@
-export interface Rect {
+import { ObjectPool } from "./object-pool.ts";
+
+export const Rectangles = new ObjectPool(
+  () => ({ x: 0, y: 0, w: 0, h: 0 }),
+  (r: Rectangle, x: number, y: number, w: number, h: number) => {
+    r.x = x;
+    r.y = y;
+    r.w = w;
+    r.h = h;
+  }
+);
+
+export interface Rectangle {
   x: number;
   y: number;
   w: number;
   h: number;
 }
 
-function createRect(x: number, y: number, width: number, height: number): Rect {
-  return { x, y, w: width, h: height };
-}
-
-export function rectContainsRect(r1: Rect, r2: Rect): boolean {
+export function rectContainsRect(r1: Rectangle, r2: Rectangle): boolean {
   if (r2.w * r2.h > r1.w * r1.h) {
     return false;
   }
@@ -26,24 +34,13 @@ export function rectContainsRect(r1: Rect, r2: Rect): boolean {
   );
 }
 
-export function rectIntersectsRect(r1: Rect, r2: Rect): boolean {
+export function rectIntersectsRect(r1: Rectangle, r2: Rectangle): boolean {
   return r1.x < r2.x + r2.w && r1.x + r1.w > r2.x && r1.y < r2.y + r2.h && r1.y + r1.h > r2.y;
 }
 
-export function rectContainsPoint(rect: Rect, x: number, y: number): boolean {
+export function rectContainsPoint(rect: Rectangle, x: number, y: number): boolean {
   return x > rect.x && x < rect.x + rect.w && y > rect.y && y < rect.y + rect.h;
 }
-
-export const Rect = (() =>
-  Object.assign(createRect, {
-    intersects: {
-      rect: rectIntersectsRect,
-    },
-    contains: {
-      rect: rectContainsRect,
-      point: rectContainsPoint,
-    },
-  }))();
 
 export interface Circle {
   x: number;
@@ -55,7 +52,7 @@ export function circleContainsPoint(c: Circle, x: number, y: number): boolean {
   return c.r > 0 && x >= c.x - c.r && x <= c.x + c.r && y >= c.y - c.r && y <= c.y + c.r;
 }
 
-export function circleContainsRect(c: Circle, r: Rect): boolean {
+export function circleContainsRect(c: Circle, r: Rectangle): boolean {
   return (
     circleContainsPoint(c, r.x, r.y) &&
     circleContainsPoint(c, r.x + r.w, r.y) &&
@@ -64,7 +61,7 @@ export function circleContainsRect(c: Circle, r: Rect): boolean {
   );
 }
 
-export function circleIntersectsRect(circle: Circle, rect: Rect) {
+export function circleIntersectsRect(circle: Circle, rect: Rectangle) {
   const halfWidth = rect.w / 2;
   const halfHeight = rect.h / 2;
 

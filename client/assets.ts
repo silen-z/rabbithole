@@ -1,7 +1,7 @@
 import { resource } from "../shared/ecs.ts";
 
 export class AssetLoader {
-  private loadedAssets: Map<string, CanvasImageSource> = new Map();
+  private loadedAssets: Map<string, TexImageSource> = new Map();
 
   constructor(private basePath: string) {}
 
@@ -16,7 +16,7 @@ export class AssetLoader {
     });
   }
 
-  get(path: string) {
+  get(path: string): TexImageSource | undefined {
     return this.loadedAssets.get(path);
   }
 }
