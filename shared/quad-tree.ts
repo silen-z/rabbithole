@@ -99,15 +99,16 @@ function foldSubTreesToParent<T>(quadTree: QuadTree<T>, data: T) {
   quadTree.data = data;
 }
 
+const WH = [
+  { w: 0, h: 0 },
+  { w: 1, h: 0 },
+  { w: 0, h: 1 },
+  { w: 1, h: 1 },
+];
+
 function split<T>(quadTree: QuadTree<T>) {
-  var wh = [
-    { w: 0, h: 0 },
-    { w: 1, h: 0 },
-    { w: 0, h: 1 },
-    { w: 1, h: 1 },
-  ];
   quadTree.subTree = [];
-  for (const o of wh) {
+  for (const o of WH) {
     quadTree.subTree.push(
       QuadTrees.get(
         Rectangles.get(

@@ -5,7 +5,7 @@ export class AssetLoader {
 
   constructor(private basePath: string) {}
 
-  load(path: string): Promise<HTMLImageElement> {
+  loadImage(path: string): Promise<HTMLImageElement> {
     return new Promise((resolve) => {
       const img = new window.Image();
       img.src = this.basePath + path;

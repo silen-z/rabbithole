@@ -20,14 +20,17 @@ export const InitJoinScreen = system()
     const spaceship = assets.get("spaceship.png")!;
     const sprite = new SpriteMaterial(renderer.gl, spaceship);
 
-    const terrain = world.spawn(Terrain(QuadTrees.get(Rectangles.get(50, 50, 850, 850), 8, true)), CleanupAfterLogin());
+    const inverted = assets.get("spaceship_i.png")!;
+    const invertedSprite = new SpriteMaterial(renderer.gl, inverted);
+
+    const terrain = world.spawn(Terrain(QuadTrees.get(Rectangles.get(50, 50, 850, 850), 10, true)), CleanupAfterLogin());
 
     world.withResources(ScreenTerrain(terrain));
 
     for (const i of range(5)) {
       world.spawn(
         Ship(10),
-        Sprite(sprite),
+        Sprite(i % 2 === 0 ? sprite : invertedSprite),
         Position({ x: i % 2 === 0 ? 200 : 800, y: 50 + 150 * i }),
         Direction({ x: i % 2 === 0 ? 50 : -50, y: Math.random() * (i % 2 === 0 ? -50 : 50) }),
         CleanupAfterLogin()
@@ -89,10 +92,14 @@ export const JoinScreen = Machine<EcsContext, DoneEventObject>({
     loading_assets: {
       // @ts-ignore
       invoke: {
-        onError: (ctx: any, error: any) => {
+        onError: (_: EcsContext, error: any) => {
           console.error(error);
         },
-        src: (ctx) => ctx.world.res(Assets).load("spaceship.png"),
+        src: (ctx) => {
+          const assets = ctx.world.res(Assets);
+
+          return Promise.all([assets.loadImage("spaceship_i.png"), assets.loadImage("spaceship.png")]);
+        },
         onDone: "assets_loaded",
       },
     },
