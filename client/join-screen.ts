@@ -1,4 +1,4 @@
-import { Machine, DoneEventObject } from "xstate";
+import { createMachine, DoneEventObject } from "xstate";
 import { Renderer, Sprite, SpriteMaterial, Position, Terrain } from "./renderer.ts";
 import { Assets } from "./assets.ts";
 import { Time } from "../shared/time.ts";
@@ -23,7 +23,10 @@ export const InitJoinScreen = system()
     const inverted = assets.get("spaceship_i.png")!;
     const invertedSprite = new SpriteMaterial(renderer.gl, inverted);
 
-    const terrain = world.spawn(Terrain(QuadTrees.get(Rectangles.get(50, 50, 850, 850), 10, true)), CleanupAfterLogin());
+    const terrain = world.spawn(
+      Terrain(QuadTrees.get(Rectangles.get(50, 50, 850, 850), 10, true)),
+      CleanupAfterLogin()
+    );
 
     world.withResources(ScreenTerrain(terrain));
 
@@ -86,7 +89,7 @@ export const CleanupJoinScreen = system()
     }
   });
 
-export const JoinScreen = Machine<EcsContext, DoneEventObject>({
+export const JoinScreen = createMachine<EcsContext, DoneEventObject>({
   initial: "loading_assets",
   states: {
     loading_assets: {
