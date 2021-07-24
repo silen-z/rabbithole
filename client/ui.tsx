@@ -1,31 +1,25 @@
-import React from "react";
-import { render } from "react-dom";
+import { render, createContext, h } from "preact";
+import { useContext, useState } from "preact/hooks";
 import type { ClientState, ClientEvent } from "./client.ts";
-import { ArchetypeGraph } from "./ui/archetype-graph.tsx";
-import { WindowPortal } from "./ui/window-portal.tsx";
 
 interface ClientStateContext {
   state: ClientState;
   dispatch: (event: ClientEvent) => void;
 }
-const ClientStateContext = React.createContext<ClientStateContext>(null!);
+const ClientStateContext = createContext<ClientStateContext>(null!);
 
-export class Ui {
-  constructor(private container: HTMLElement) {}
-
-  update(state: ClientState, dispatch: (event: ClientEvent) => void) {
-    render(
-      <ClientStateContext.Provider value={{ state, dispatch }}>
-        <Screen />
-        <DebugPanel />
-      </ClientStateContext.Provider>,
-      this.container
-    );
-  }
+export function renderUi(state: ClientState, dispatch: (event: ClientEvent) => void) {
+  render(
+    <ClientStateContext.Provider value={{ state, dispatch }}>
+      <Screen />
+      <DebugPanel />
+    </ClientStateContext.Provider>,
+    document.body
+  );
 }
 
 function Screen() {
-  const { state } = React.useContext(ClientStateContext);
+  const { state } = useContext(ClientStateContext);
   if (state.matches("unidentified")) {
     return <LoginScreen />;
   }
@@ -37,10 +31,11 @@ interface JoinFormElements extends HTMLFormControlsCollection {
 }
 
 function LoginScreen() {
-  const { dispatch, state } = React.useContext(ClientStateContext);
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  const { dispatch, state } = useContext(ClientStateContext);
+  function handleSubmit(event: Event) {
     event.preventDefault();
-    const inputs = event.currentTarget.elements as JoinFormElements;
+    const form = event.currentTarget as HTMLFormElement;
+    const inputs = form.elements as JoinFormElements;
     dispatch({
       type: "IDENTIFY",
       nickname: inputs.nickname.value,
@@ -51,8 +46,8 @@ function LoginScreen() {
   const rejectReson = state.context.identityRejectReason;
 
   return (
-    <div className="login-screen">
-      <form onSubmit={handleSubmit} className="nickname-form">
+    <div class="screen login-screen">
+      <form onSubmit={handleSubmit} class="nickname-form">
         {isWaitingForConfirm ? (
           <p>joining in...</p>
         ) : rejectReson != null ? (
@@ -72,19 +67,22 @@ function LoginScreen() {
 }
 
 function DebugPanel() {
-  const { state } = React.useContext(ClientStateContext);
+  const { state } = useContext(ClientStateContext);
 
-  const [isPanelOpen, setPanelOpen] = React.useState(false);
-  const [isGraphOpen, setGraphOpen] = React.useState(false);
+  const [isPanelOpen, setPanelOpen] = useState(false);
 
   if (!isPanelOpen) {
-    return <button className="debug-panel-open" onClick={() => setPanelOpen(true)}>debug</button>;
+    return (
+      <button class="debug-panel-open" onClick={() => setPanelOpen(true)}>
+        debug
+      </button>
+    );
   }
 
   return (
-    <div className="debug-panel">
+    <div class="debug-panel">
       <button onClick={() => setPanelOpen(false)}>close debug panel</button>;
-      <table className="debug-stats">
+      <table class="debug-stats">
         <tbody>
           <tr>
             <td>Entities:</td>
@@ -96,14 +94,6 @@ function DebugPanel() {
           </tr>
         </tbody>
       </table>
-      <button disabled={isGraphOpen} onClick={() => setGraphOpen(true)}>
-        open archetype graph
-      </button>
-      {isGraphOpen && (
-        <WindowPortal onClose={() => setGraphOpen(false)}>
-          <ArchetypeGraph graph={state.context.diagnostics?.archetypeGraph} />
-        </WindowPortal>
-      )}
     </div>
   );
 }

@@ -3,11 +3,10 @@
     "ws": "https://deno.land/std@0.95.0/ws/mod.ts",
     "uuid": "https://deno.land/std@0.95.0/uuid/mod.ts",
     "oak": "https://deno.land/x/oak@v6.5.1/mod.ts",
-    "xstate": "https://cdn.skypack.dev/xstate@^v4.18.0?dts",
-    "@xstate/immer": "https://cdn.skypack.dev/@xstate/immer@0.2.0?dts",
-    "net-serializer": "https://cdn.skypack.dev/net-serializer@v4.3.2?dts",
-    "react": "https://cdn.skypack.dev/react@v17.0.1?dts",
-    "react-dom": "https://cdn.skypack.dev/react-dom@v17.0.1?dts",
-    "@hpcc-js/wasm": "https://cdn.skypack.dev/@hpcc-js/wasm@v1.5.1?dts"
+    "xstate": "https://esm.sh/xstate@4.18.0",
+    "@xstate/immer": "https://esm.sh/@xstate/immer@0.2.0",
+    "net-serializer": "https://esm.sh/net-serializer@4.3.2",
+    "preact": "https://esm.sh/preact",
+    "preact/hooks": "https://esm.sh/preact/hooks"
   }
 }

@@ -30,24 +30,29 @@ interface RuntimeSystem {
  * ECS world that contains entities and their components
  */
 export class World {
-  /**
-   * resources object given to systems to store data and communicate with services outside the ECS
-   * */
-  private resources: Map<symbol, unknown> = new Map();
-
-  private lastEntity = 0;
-
-  private components: Set<ComponentId> = new Set();
-
-  private rootArchetype = new Archetype(new Set(), this.components);
-
-  private systems: Map<symbol, RuntimeSystem> = new Map();
-
+  /** entities and their locations within archetypes */
   private entities: Map<Entity, EntityMeta> = new Map();
 
+  /** set of registered components */
+  private components: Set<ComponentId> = new Set();
+
+  /** archetypes */
   private archetypes: Map<ArchetypeId, Archetype> = new Map();
 
-  private queriesNeedRefresh = false;
+  /** empty archetype - root of the archetype graph */
+  private rootArchetype = new Archetype(new Set());
+
+  /** registered systems */
+  private systems: Map<symbol, RuntimeSystem> = new Map();
+
+  /** resources object given to systems to store data and communicate with services outside the ECS */
+  private resources: Map<symbol, unknown> = new Map();
+
+  /** last used entity id */
+  private lastEntity = 0;
+
+  /** whenever archetype is created this is set to true to invalidate query cache */
+  private refreshQueries = false;
 
   /**
    * Creates empty ECS world
@@ -62,10 +67,10 @@ export class World {
   execute(): void {
     for (const system of this.systems.values()) {
       if (system.enabled) {
-        system.fn(this, ...this.resolveSystemParams(system.params, true, this.queriesNeedRefresh));
+        system.fn(this, ...this.resolveSystemParams(system.params, true, this.refreshQueries));
       }
     }
-    this.queriesNeedRefresh = false;
+    this.refreshQueries = false;
   }
 
   /**
@@ -122,7 +127,7 @@ export class World {
   }
 
   spawn(...components: Insertion[]): Entity {
-    const entity = this.lastEntity++ as Entity;
+    const entity = this.lastEntity++;
 
     const archetype = this.findArchetype(this.rootArchetype, components);
 
@@ -283,7 +288,11 @@ export class World {
   }
 
   private createArchetype(type: Set<ComponentId>): Archetype {
-    const newArchetype = new Archetype(type, this.components);
+    const newArchetype = new Archetype(type);
+
+    for (const c of this.components) {
+      newArchetype.edges.set(c, { add: null, remove: null });
+    }
 
     for (const archetype of this.archetypes.values()) {
       const additionalComponent = findSingleDiff(type, archetype.type);
@@ -300,7 +309,7 @@ export class World {
     }
 
     this.archetypes.set(newArchetype.id, newArchetype);
-    this.queriesNeedRefresh = true;
+    this.refreshQueries = true;
 
     return newArchetype;
   }
@@ -326,15 +335,11 @@ export class Archetype {
   edges: Map<ComponentId, Edge> = new Map();
   components: Map<ComponentId, unknown[]> = new Map();
 
-  constructor(public type: Set<ComponentId>, registeredComponents: Iterable<ComponentId>) {
+  constructor(public type: Set<ComponentId>) {
     this.id = Archetype.createId(this.type);
     // init component storages
     for (const c of type) {
       this.components.set(c, []);
-    }
-
-    for (const c of registeredComponents) {
-      this.edges.set(c, { add: null, remove: null });
     }
   }
 
@@ -343,10 +348,10 @@ export class Archetype {
     const newIndex = newArchetype.entities.push(entity) - 1;
 
     // move data from old archetype
-    for (const id of this.type) {
-      const oldData = this.components.get(id)![oldIndex];
+    for (const [id, data] of this.components) {
+      const oldData = data[oldIndex];
       newArchetype.set(id, newIndex, oldData);
-      swapRemove(this.components.get(id)!, oldIndex);
+      swapRemove(data, oldIndex);
     }
 
     return { newIndex, movedEntity: this.entities[oldIndex] };

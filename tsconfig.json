@@ -4,6 +4,10 @@
     "downlevelIteration": true,
     "lib": ["DOM", "ES2019", "deno.ns"],
 
+    // preact
+    "jsxFactory": "h",
+    "jsxFragmentFactory": "Fragment",
+
     // linter checks
     "noFallthroughCasesInSwitch": true,
     "noImplicitReturns": true,

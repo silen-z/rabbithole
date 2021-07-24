@@ -1,10 +1,9 @@
-import { wasmFolder } from "@hpcc-js/wasm";
 import { Machine, interpret, assign, State, send, SpawnedActorRef } from "xstate";
 import { TickScheduler } from "../shared/tickscheduler.ts";
 import { Connection, ConnectionEvent } from "./connection.ts";
 import { World, Diagnostics } from "../shared/ecs.ts";
 import { WebGLRenderer, Renderer, RenderingSystem, RenderTerrain } from "./renderer.ts";
-import { Ui } from "./ui.tsx";
+import { renderUi } from "./ui.tsx";
 import { Identify } from "../shared/packets.ts";
 import { Assets, AssetLoader } from "./assets.ts";
 import { JoinScreen } from "./join-screen.ts";
@@ -19,11 +18,11 @@ class Client {
     clock: this.tickScheduler,
   });
 
-  constructor(private renderer: WebGLRenderer, private ui: Ui) {
+  constructor(private renderer: WebGLRenderer) {
     this.world.withResources(Time({ delta: 0 }), Assets(new AssetLoader("/sprites/")), Renderer(this.renderer));
 
     this.service.onTransition((state) => {
-      this.ui.update(state, this.service.send);
+      renderUi(state, this.service.send);
     });
   }
 
@@ -155,10 +154,7 @@ const ClientStateMachine = (world: World, connection: Connection) =>
 
 export type ClientState = State<ClientStateContext, ClientEvent>;
 
-wasmFolder("./wasm");
-
 const renderer = new WebGLRenderer(window.document.getElementsByTagName("canvas")[0]!);
-const ui = new Ui(window.document.getElementById("ui")!);
 
-const client = new Client(renderer, ui);
+const client = new Client(renderer);
 client.start();
